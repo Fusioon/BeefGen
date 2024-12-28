@@ -1,0 +1,25 @@
+FileVersion = 1
+
+[Project]
+Name = "BeefGen"
+StartupObject = "BeefGen.Entry3"
+
+[Configs.Debug.Win64]
+LibPaths = ["$(WorkspaceDir)/libs/libclang/dist/win_x64/libclang.lib"]
+PostBuildCmds = ["CopyFilesIfNewer(\"$(WorkspaceDir)/libs/libclang/dist/win_x64/libclang.dll\", \"$(TargetDir)\")"]
+
+[Configs.Release.Win64]
+LibPaths = ["$(WorkspaceDir)/libs/libclang/dist/win_x64/libclang.lib"]
+PostBuildCmds = ["CopyFilesIfNewer(\"$(WorkspaceDir)/libs/libclang/dist/win_x64/libclang.dll\", \"$(TargetDir)\")"]
+
+[Configs.Paranoid.Win64]
+LibPaths = ["$(WorkspaceDir)/libs/libclang/dist/win_x64/libclang.lib"]
+PostBuildCmds = ["CopyFilesIfNewer(\"$(WorkspaceDir)/libs/libclang/dist/win_x64/libclang.dll\", \"$(TargetDir)\")"]
+
+[Configs.Test.Win64]
+LibPaths = ["$(WorkspaceDir)/libs/libclang/dist/win_x64/libclang.lib"]
+PostBuildCmds = ["CopyFilesIfNewer(\"$(WorkspaceDir)/libs/libclang/dist/win_x64/libclang.dll\", \"$(TargetDir)\")"]
+
+[[ProjectFolder.Items]]
+Type = "IgnoreSource"
+Name = "SDL3.bf"
