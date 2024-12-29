@@ -263,6 +263,13 @@ class Generator
 			WriteIdentifier(a.name, writer);
 		}
 
+		if (f.isVarArg)
+		{
+			if (f.args.Count > 0)
+				writer.Write(", ");
+			writer.Write("...");
+		}	
+
 		writer.Write(")");
 		if (!isInline)
 			writer.WriteLine(";");

@@ -54,7 +54,9 @@ class Parser : IRawAllocator
 	{
 		public append String name;
 		public bool unnamed;
-		public TypeDef baseType;
+		public TypeRef baseType;
+
+		public void SetUnnamed() => unnamed = name.Contains("unnamed");
 	}
 
 	public class EnumDef : TypeDef
@@ -134,6 +136,7 @@ class Parser : IRawAllocator
 		Enum = 0x04,
 		Function = 0x08,
 
+		Anonymous = 0x20,
 		ForceGenerate = 0x40,
 		Resolved = 0x80,
 	}
@@ -145,6 +148,13 @@ class Parser : IRawAllocator
 		public ETypeAliasFlags flags;
 	}
 
+	protected struct IgnoreWritesRestore : this(SelfOuter inst, bool prev), IDisposable
+	{
+		public void Dispose()
+		{
+
+		}
+	}
 
 #endregion
 
@@ -158,7 +168,10 @@ class Parser : IRawAllocator
 	public append Dictionary<String, TypeAliasDef> _aliasMap;
 
 	public append List<GlobalVariableDecl> globalVars;
-	
+
+	Settings _settings;
+
+
 	public void* Alloc(int size, int align) => _alloc.Alloc(size, align);
 
 	public void Free(void* ptr) => _alloc.Free(ptr);
@@ -172,9 +185,15 @@ class Parser : IRawAllocator
 #endif
 	}
 
+
+	bool _ignoreWrites = false;
+
 	void AddType(EnumDef def)
 	{
 		Debug.Assert(def.name.Length > 0);
+
+		if (_ignoreWrites)
+			return;
 
 		_types.Add(def.name, def);
 		_enums.Add(def);
@@ -184,6 +203,9 @@ class Parser : IRawAllocator
 	{
 		Debug.Assert(def.name.Length > 0);
 
+		if (_ignoreWrites)
+			return;
+
 		_types.Add(def.name, def);
 		_structs.Add(def);
 	}
@@ -192,6 +214,9 @@ class Parser : IRawAllocator
 	{
 		Debug.Assert(def.name.Length > 0);
 
+		if (_ignoreWrites)
+			return;
+
 		_types.Add(def.name, def);
 		_functions.Add(def);
 	}
@@ -199,14 +224,24 @@ class Parser : IRawAllocator
 	void AddType(TypeAliasDef def)
 	{
 		Debug.Assert(def.name.Length > 0);
+
+		if (_ignoreWrites)
+			return;
+
 		if (_types.TryAdd(def.name, def))
 		{
 			_aliasMap.TryAdd(def.name, def);
 		}
 	}
 
+	protected IgnoreWritesRestore IgnoreWrites()
+	{
+		let prev = _ignoreWrites;
+		_ignoreWrites = true;
+		return .(this, prev);
+	}
+	protected void RestoreWrites(IgnoreWritesRestore v) => _ignoreWrites = v.prev;
 
-	Settings _settings;
 
 	void PrintDiagnostics(CXTranslationUnit tu)
 	{
@@ -302,17 +337,17 @@ class Parser : IRawAllocator
 
 		switch (kind)
 		{
-			case .Typedef: return TypedefDecl(cursor);
-			case .Function: return FuncDecl(cursor);
-			case .Struct:  return StructDecl(cursor);
-			case .Enum: return EnumDecl(cursor);
+			case .Typedef: return TypedefDecl(cursor, ?);
+			case .Function: return FuncDecl(cursor, ?);
+			case .Struct:  return StructDecl(cursor, ?);
+			case .Enum: return EnumDecl(cursor, ?);
 			case .Variable: return VarDecl(cursor);
 		}
 	}
 
-	CXChildVisitResult TypedefDecl(CXCursor cursor)
+	CXChildVisitResult TypedefDecl(CXCursor cursor, out TypeAliasDef typealiasDef)
 	{
-		let typealiasDef = new:this TypeAliasDef();
+		typealiasDef = new:this TypeAliasDef();
 		CursorSpelling(cursor, typealiasDef.name);
 		AddType(typealiasDef);
 
@@ -323,14 +358,24 @@ class Parser : IRawAllocator
 		return .CXChildVisit_Continue;
 	}
 
-	CXChildVisitResult FuncDecl(CXCursor cursor)
+	CXChildVisitResult FuncDecl(CXCursor cursor, out FunctionTypeDef functionDef)
 	{
+		if (clang_Cursor_isFunctionInlined(cursor) != 0)
+		{
+			functionDef = null;
+			return .CXChildVisit_Continue;
+		}
+
 		let link = clang_getCursorLinkage(cursor);
 
-		let functionDef = new:this FunctionTypeDef();
+		functionDef = new:this FunctionTypeDef();
 		CursorSpelling(cursor, functionDef.name);
+		functionDef.SetUnnamed();
 		AddType(functionDef);
 		functionDef.linkageType = link;
+
+		if (functionDef.name == "SDL_vsscanf")
+			NOP!();
 
 		let functionType = clang_getCursorType(cursor);
 		let callconv = clang_getFunctionTypeCallingConv(functionType);
@@ -383,6 +428,30 @@ class Parser : IRawAllocator
 		return .CXChildVisit_Continue;
 	}
 
+	bool MatchLocation(StringView lhs, StringView rhs)
+	{
+		int GetFilenameStart(StringView path)
+		{
+			int length = path.Length;
+			for (int i = length; --i >= 0; )
+			{
+				char8 ch = path[i];
+				if (ch == Path.DirectorySeparatorChar || ch == Path.AltDirectorySeparatorChar || ch == Path.VolumeSeparatorChar)
+				{
+					return i;
+				}
+			}
+			return -1;
+		}
+
+		let lhsStart = GetFilenameStart(lhs);
+		let rhsStart = GetFilenameStart(rhs);
+		if (lhsStart == -1 || rhsStart == -1)
+			return false;
+
+		return lhs.Substring(lhsStart) == rhs.Substring(rhsStart);
+	}
+
 	CXChildVisitResult ForEachStructField(CXCursor fieldCursor, CXCursor parent, StructTypeDef typedef)
 	{
 		let kind = clang_getCursorKind(fieldCursor);
@@ -394,38 +463,66 @@ class Parser : IRawAllocator
 
 				let fieldDecl = new:this VariableDecl();
 				CursorSpelling(fieldCursor, fieldDecl.name);
-				GetTypeRef(fieldType, fieldDecl.type, false, fieldCursor);
+				(?, let flags) = GetTypeRef(fieldType, fieldDecl.type, false, fieldCursor);
+				if (flags.HasFlag(.Anonymous))
+				{
+					Runtime.Assert(typedef.innerTypes != null && typedef.innerTypes.Count > 0);
+					let top = typedef.innerTypes.Back;
+					Runtime.Assert(MatchLocation(fieldDecl.type.typeString, top.name));
+					
+					top.name..Set(fieldDecl.name)..ToUpper().Append("_T");
+					fieldDecl.type.typeString.Set(top.name);
+				}
+
 				typedef.fields.Add(fieldDecl);
 			}
 
-		case .CXCursor_StructDecl, .CXCursor_UnionDecl:
+		case .CXCursor_StructDecl, .CXCursor_UnionDecl, .CXCursor_EnumDecl, .CXCursor_TypedefDecl:
 			{
-				Debug.SafeBreak();
-			}
-
-		case .CXCursor_EnumDecl:
-			{
-				Debug.SafeBreak();
-			}
-
-		case .CXCursor_TypedefDecl:
-			{
-				 Debug.SafeBreak();
+				using (IgnoreWrites())
+				{
+					TypeDef type;
+					switch (_)
+					{
+					case .CXCursor_StructDecl, .CXCursor_UnionDecl:
+						{
+							StructDecl(fieldCursor, let structType);
+							type = structType;
+						}
+					case .CXCursor_EnumDecl:
+						{
+							EnumDecl(fieldCursor, let enumType);
+							type = enumType;
+						}
+					case .CXCursor_TypedefDecl:
+						{
+							TypedefDecl(fieldCursor, let typedefDef);
+							type = typedefDef;
+						}
+					default: Runtime.FatalError();
+					}
+					typedef.innerTypes ??= new:this List<TypeDef>();
+					typedef.innerTypes.Add(type);
+				}	
 			}
 		default:
 		}
 		return .CXChildVisit_Continue;
 	}
 
-	CXChildVisitResult StructDecl(CXCursor cursor)
+	CXChildVisitResult StructDecl(CXCursor cursor, out StructTypeDef typedef)
 	{
 		if (clang_isCursorDefinition(cursor) == 0)
+		{
+			typedef = null;
 			return .CXChildVisit_Continue;
+		}
 
-		let typedef = new:this StructTypeDef();
+		typedef = new:this StructTypeDef();
 		CursorSpelling(cursor, typedef.name);
-		AddType(typedef);
+		typedef.SetUnnamed();
 
+		AddType(typedef);
 
 		CXType type = clang_getCursorType(cursor);
 		CXCursor declCursor = clang_getTypeDeclaration(type);
@@ -448,7 +545,7 @@ class Parser : IRawAllocator
 		return .CXChildVisit_Continue;
 	}
 
-	CXChildVisitResult EnumDecl(CXCursor cursor)
+	CXChildVisitResult EnumDecl(CXCursor cursor, out EnumDef def)
 	{
 		let tu = clang_Cursor_getTranslationUnit(cursor);
 		let range = clang_getCursorReferenceNameRange(cursor, .CXNameRange_WantSinglePiece, 0);
@@ -458,10 +555,17 @@ class Parser : IRawAllocator
 
 		clang_tokenize(tu, range, &tokens, &tokenCount);
 
-		let def = new:this EnumDef();
+		def = new:this EnumDef();
 		CursorDisplayName(cursor, def.name);
-		def.unnamed = def.name.Contains("unnamed");
+		def.SetUnnamed();
 		AddType(def);
+
+		let baseType = clang_getEnumDeclIntegerType(cursor);
+		if (baseType.kind != .CXType_Int)
+		{
+			def.baseType = new .();
+			GetTypeRef(baseType, def.baseType, false);
+		}
 
 		for (uint32 i < tokenCount) {
 			let tokenKind = clang_getTokenKind(tokens[i]);
@@ -539,6 +643,9 @@ class Parser : IRawAllocator
 				var unqalType = clang_getUnqualifiedType(canonicalType);
 
 				TypeSpelling(unqalType, result.typeString);
+				if (result.typeString.Contains("unnamed"))
+					aliasFlags |= .Anonymous;
+
 				if (_ == .CXType_Enum)
 				{
 					aliasFlags |= .Enum;
@@ -617,6 +724,10 @@ class Parser : IRawAllocator
 				if (realType.kind == .CXType_Elaborated)
 				{
 					TypeSpelling(realType, result.typeString);
+					if (result.typeString == "va_list")
+					{
+						result.typeString.Set(nameof(VarArgs));
+					}
 				}
 			}
 
