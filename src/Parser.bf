@@ -298,8 +298,6 @@ class Parser : IRawAllocator
 		return .Ok;
 	}
 
-	
-
 	CXChildVisitResult ForEachChildren(StringView inputFile, CXCursor cursor, CXCursor parent)
 	{
 		EDeclKind kind;
@@ -311,11 +309,12 @@ class Parser : IRawAllocator
 			case .CXCursor_UnionDecl: kind = .Struct;
 			case .CXCursor_EnumDecl: kind = .Enum;
 			case .CXCursor_VarDecl: kind = .Variable;
+			case .CXCursor_MacroDefinition: kind = .Macro;
+
 			default: return .CXChildVisit_Recurse;
 		}
 
 		let name = CursorSpelling(cursor, .. scope .());
-
 		if (_settings.typeFilter != null)
 		{
 			CXFile file = ?;
@@ -342,7 +341,32 @@ class Parser : IRawAllocator
 			case .Struct:  return StructDecl(cursor, ?);
 			case .Enum: return EnumDecl(cursor, ?);
 			case .Variable: return VarDecl(cursor);
+			case .Macro: return MacroDecl(cursor);
 		}
+	}
+
+	CXChildVisitResult MacroDecl(CXCursor cursor)
+	{
+		let macroName = CursorSpelling(cursor, .. scope .());
+
+		let range = clang_getCursorExtent(cursor);
+		let unit = clang_Cursor_getTranslationUnit(cursor);
+		CXToken *tokens = ?;
+		uint32 tokenCount = 0;
+		clang_tokenize(unit, range, &tokens, &tokenCount);
+
+		String buffer = scope .();
+		for (uint32 i = 1; i < tokenCount; ++i)
+		{
+			CXString tokenSpelling = clang_getTokenSpelling(unit, tokens[i]);
+			buffer.Append(clang_getCString(tokenSpelling));
+			clang_disposeString(tokenSpelling);
+		}
+
+		clang_disposeTokens(unit, tokens, tokenCount);
+		if (tokenCount > 1)
+			Log.Info(scope $"{macroName} {buffer}");
+		return .CXChildVisit_Continue;
 	}
 
 	CXChildVisitResult TypedefDecl(CXCursor cursor, out TypeAliasDef typealiasDef)

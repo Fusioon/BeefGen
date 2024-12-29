@@ -12,7 +12,8 @@ enum EDeclKind
 	Struct,
 	Function,
 	Typedef,
-	Variable
+	Variable,
+	Macro
 }
 
 public class Settings
