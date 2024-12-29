@@ -152,7 +152,7 @@ class Parser : IRawAllocator
 	{
 		public void Dispose()
 		{
-
+			inst.RestoreWrites(this);
 		}
 	}
 
