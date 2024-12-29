@@ -352,7 +352,7 @@ class Parser : IRawAllocator
 		AddType(typealiasDef);
 
 		let resolvedType = clang_getTypedefDeclUnderlyingType(cursor);
-		(?, let flags) = GetTypeRef(resolvedType, typealiasDef.alias, false, cursor);
+		(?, let flags) = GetTypeRef(resolvedType, typealiasDef.alias, false, ?, cursor);
 		typealiasDef.flags = flags;
 
 		return .CXChildVisit_Continue;
@@ -391,7 +391,7 @@ class Parser : IRawAllocator
 		functionDef.typeOnly = false;
 
 		let returnType = clang_getResultType(functionType);
-		GetTypeRef(returnType, functionDef.resultType, false, cursor);
+		GetTypeRef(returnType, functionDef.resultType, false, ?, cursor);
 
 		let numArgs = clang_getNumArgTypes(functionType);
 		
@@ -420,7 +420,7 @@ class Parser : IRawAllocator
 			let argType = clang_getArgType(functionType, (.)i);
 			let arg = new:this VariableDecl();
 			arg.name.Set(argNames[i]);
-			GetTypeRef(argType, arg.type, false, cursor);
+			GetTypeRef(argType, arg.type, false, ?, cursor);
 			functionDef.args.Add(arg);
 		}
 
@@ -463,7 +463,7 @@ class Parser : IRawAllocator
 
 				let fieldDecl = new:this VariableDecl();
 				CursorSpelling(fieldCursor, fieldDecl.name);
-				(?, let flags) = GetTypeRef(fieldType, fieldDecl.type, false, fieldCursor);
+				(?, let flags) = GetTypeRef(fieldType, fieldDecl.type, false, ?, fieldCursor);
 				if (flags.HasFlag(.Anonymous))
 				{
 					Runtime.Assert(typedef.innerTypes != null && typedef.innerTypes.Count > 0);
@@ -564,7 +564,7 @@ class Parser : IRawAllocator
 		if (baseType.kind != .CXType_Int)
 		{
 			def.baseType = new .();
-			GetTypeRef(baseType, def.baseType, false);
+			GetTypeRef(baseType, def.baseType, false, ?);
 		}
 
 		for (uint32 i < tokenCount) {
@@ -597,15 +597,15 @@ class Parser : IRawAllocator
 		CursorDisplayName(cursor, decl.name);
 		decl.storageKind = storageClass;
 		let type = clang_getCursorType(cursor);
-		GetTypeRef(type, decl.type, false, cursor);
+		GetTypeRef(type, decl.type, false, ?, cursor);
 		globalVars.Add(decl);
 
 		return .CXChildVisit_Continue;
 	}
 
-	(CXType, ETypeAliasFlags) GetTypeRef(CXType type, TypeRef result, bool skipRaw, CXCursor cursor = default)
+	(CXType, ETypeAliasFlags) GetTypeRef(CXType type, TypeRef result, bool skipRaw, out int32 indirs, CXCursor cursor = default)
 	{
-		GetDeepPointee(type, let indirs, let realType);
+		GetDeepPointee(type, out indirs, let realType);
 
 		let canonicalType = clang_getCanonicalType(realType);
 		if (!skipRaw)
@@ -669,12 +669,15 @@ class Parser : IRawAllocator
 					result.sizedArray.Add(size);
 				}
 				while (t.kind == .CXType_ConstantArray);
-				(?, let flags) = GetTypeRef(t, result, true);
+				(?, let flags) = GetTypeRef(t, result, true, ?);
 				aliasFlags |= flags;
 			}
-			case .CXType_Invalid: 
+			case .CXType_IncompleteArray:
 			{
-				Runtime.FatalError();
+				let elementType = clang_getArrayElementType(canonicalType);
+				(?, let flags) = GetTypeRef(elementType, result, true, let depth);
+				result.ptrDepth = depth + 1;
+				aliasFlags |= flags;
 			}
 			case .CXType_FunctionProto:
 			{
@@ -687,7 +690,7 @@ class Parser : IRawAllocator
 				functionDef.typeOnly = true;
 
 				let returnType = clang_getResultType(realType);
-				GetTypeRef(returnType, functionDef.resultType, false, cursor);
+				GetTypeRef(returnType, functionDef.resultType, false, ?, cursor);
 				
 				let numArgs = clang_getNumArgTypes(realType);
 
@@ -714,7 +717,7 @@ class Parser : IRawAllocator
 					let argType = clang_getArgType(realType, (.)i);
 					let arg = new:this VariableDecl();
 					arg.name.Set(argNames[i]);
-					GetTypeRef(argType, arg.type, false, cursor);
+					GetTypeRef(argType, arg.type, false, ?, cursor);
 					functionDef.args.Add(arg);
 				}
 			}
@@ -729,6 +732,11 @@ class Parser : IRawAllocator
 						result.typeString.Set(nameof(VarArgs));
 					}
 				}
+			}
+			
+			case .CXType_Invalid:
+			{
+				Runtime.FatalError();
 			}
 
 			default:
