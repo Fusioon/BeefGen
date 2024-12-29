@@ -282,8 +282,6 @@ class Generator
 		writer.WriteLine(";");
 	}
 
-	
-
 	public void Generate(Parser parser, Settings settings)
 	{
 		_parser = parser;
@@ -371,10 +369,10 @@ class Generator
 
 			if ((def.flags & .ForceGenerate) != .ForceGenerate)
 			{
-				if ((def.flags & (.Resolved) !=  .Resolved))
-					continue;
+				/*if ((def.flags & (.Resolved) !=  .Resolved))
+					continue;*/
 
-				if ((def.flags & (.Primitive) == .Primitive))
+				if ((def.flags & (.Primitive) == .Primitive) && (def.alias.ptrDepth == 0 && def.alias.sizedArray == null))
 					continue;
 			}
 			else
@@ -424,12 +422,9 @@ class Generator
 
 			if (def.flags & (.Enum | .Struct | .Function) == 0)
 			{
-				sw.Write($"typealias {def.name} = ");
-				WriteBeefType(def.alias, sw);
-				sw.WriteLine(";");
+				GenerateAlias(def, sw);
 			}
 
-			//GenerateAlias(def, sw);
 		}
 	}
 }
