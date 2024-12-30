@@ -53,10 +53,10 @@ class Parser : IRawAllocator
 	public class TypeDef
 	{
 		public append String name;
-		public bool unnamed;
-		public TypeRef baseType;
 
-		public void SetUnnamed() => unnamed = name.Contains("unnamed");
+		public int32? index; // Used to determine where to insert field in case of anonymous types
+
+		public TypeRef baseType;
 	}
 
 	public class EnumDef : TypeDef
@@ -89,6 +89,7 @@ class Parser : IRawAllocator
 	{
 		public append String name;
 		public append TypeRef type;
+		public bool inserted;
 	}
 
 	public class GlobalVariableDecl : VariableDecl
@@ -136,6 +137,7 @@ class Parser : IRawAllocator
 		Enum = 0x04,
 		Function = 0x08,
 
+		Unnamed = 0x10,
 		Anonymous = 0x20,
 		ForceGenerate = 0x40,
 		Resolved = 0x80,
@@ -190,43 +192,57 @@ class Parser : IRawAllocator
 #endif
 	}
 
+	bool AddTypeInternal<T>(T typeDef) where T : TypeDef
+	{
+		Debug.Assert(typeDef.name.Length > 0);
+
+		if (types.TryAdd(typeDef.name, let keyPtr, let valPtr))
+		{
+			(*keyPtr) = typeDef.name;
+			(*valPtr) = typeDef;
+			return true;
+		}
+
+		#unwarn
+		if (let alias = (*valPtr) as TypeAliasDef)
+		{
+			//alias.flags = .Resolved;
+			(*keyPtr) = typeDef.name;
+			(*valPtr) = typeDef;
+		}
+
+		return false;
+	}
+
 	void AddType(EnumDef def)
 	{
-		Debug.Assert(def.name.Length > 0);
-
 		if (_ignoreWrites)
 			return;
 
-		types.Add(def.name, def);
+		AddTypeInternal(def);
 		enums.Add(def);
 	}
 
 	void AddType(StructTypeDef def)
 	{
-		Debug.Assert(def.name.Length > 0);
-
 		if (_ignoreWrites)
 			return;
 
-		types.Add(def.name, def);
+		AddTypeInternal(def);
 		structs.Add(def);
 	}
 
 	void AddType(FunctionTypeDef def)
 	{
-		Debug.Assert(def.name.Length > 0);
-
 		if (_ignoreWrites)
 			return;
 
-		types.Add(def.name, def);
+		AddTypeInternal(def);
 		functions.Add(def);
 	}
 
 	void AddType(TypeAliasDef def)
 	{
-		Debug.Assert(def.name.Length > 0);
-
 		if (_ignoreWrites)
 			return;
 
@@ -284,7 +300,6 @@ class Parser : IRawAllocator
 		    clang_disposeString(diagSpelling);
 			clang_disposeDiagnostic(diag);
 		}
-		
 	}
 
 	public Result<void> Parse(Settings settings)
@@ -379,8 +394,6 @@ class Parser : IRawAllocator
 		if (clang_Cursor_isMacroBuiltin(cursor) != 0)
 			return .CXChildVisit_Continue;
 
-		let macroName = CursorSpelling(cursor, .. scope .());
-
 		let range = clang_getCursorExtent(cursor);
 		let unit = clang_Cursor_getTranslationUnit(cursor);
 		CXToken *tokens = ?;
@@ -388,27 +401,49 @@ class Parser : IRawAllocator
 		clang_tokenize(unit, range, &tokens, &tokenCount);
 
 		String buffer = scope .();
-		TypeAliasDef x;
+
+		let macroDef = new:this MacroDef();
+		 CursorSpelling(cursor, macroDef.name);
+
 		let fnLike = clang_Cursor_isMacroFunctionLike(cursor) != 0;
 		uint32 index = 1;
 		if (fnLike)
 		{
-			Runtime.Assert(clang_getTokenKind(tokens[index++]) == .CXToken_Punctuation);
+			macroDef.args = new:this List<String>();
+
+			for (; index < tokenCount; ++index)
+			{
+				let kind = clang_getTokenKind(tokens[index]);
+
+				buffer.Clear();
+				CXString tokenSpelling = clang_getTokenSpelling(unit, tokens[index]);
+				buffer.Append(clang_getCString(tokenSpelling));
+				clang_disposeString(tokenSpelling);
+
+				if (buffer == ")" && kind == .CXToken_Punctuation)
+					break;
+
+				if (kind == .CXToken_Identifier)
+					macroDef.args.Add(buffer);
+
+				if (kind == .CXToken_Keyword)
+					NOP!();
+			}
 
 			// Parse args
 		}
 
-		for (uint32 i = 1; i < tokenCount; ++i)
+		for (; index < tokenCount; ++index)
 		{
-			let k = clang_getTokenKind(tokens[i]);
-			CXString tokenSpelling = clang_getTokenSpelling(unit, tokens[i]);
+			let kind = clang_getTokenKind(tokens[index]);
+			CXString tokenSpelling = clang_getTokenSpelling(unit, tokens[index]);
 			buffer.Append(clang_getCString(tokenSpelling));
 			clang_disposeString(tokenSpelling);
 		}
 
 		clang_disposeTokens(unit, tokens, tokenCount);
 		if (tokenCount > 1)
-			Log.Info(scope $"{macroName} {buffer}");
+			Log.Info(scope $"{macroDef.name} {buffer}");
 		return .CXChildVisit_Continue;
 	}
 
@@ -437,12 +472,8 @@ class Parser : IRawAllocator
 
 		functionDef = new:this FunctionTypeDef();
 		CursorSpelling(cursor, functionDef.name);
-		functionDef.SetUnnamed();
 		AddType(functionDef);
 		functionDef.linkageType = link;
-
-		if (functionDef.name == "SDL_vsscanf")
-			NOP!();
 
 		let functionType = clang_getCursorType(cursor);
 		let callconv = clang_getFunctionTypeCallingConv(functionType);
@@ -531,7 +562,7 @@ class Parser : IRawAllocator
 				let fieldDecl = new:this VariableDecl();
 				CursorSpelling(fieldCursor, fieldDecl.name);
 				(?, let flags) = GetTypeRef(fieldType, fieldDecl.type, false, ?, fieldCursor);
-				if (flags.HasFlag(.Anonymous))
+				if (flags.HasFlag(.Unnamed))
 				{
 					Runtime.Assert(typedef.innerTypes != null && typedef.innerTypes.Count > 0);
 					let top = typedef.innerTypes.Back;
@@ -568,6 +599,7 @@ class Parser : IRawAllocator
 						}
 					default: Runtime.FatalError();
 					}
+					type.index = (.)typedef.fields.Count;
 					typedef.innerTypes ??= new:this List<TypeDef>();
 					typedef.innerTypes.Add(type);
 				}	
@@ -587,7 +619,6 @@ class Parser : IRawAllocator
 
 		typedef = new:this StructTypeDef();
 		CursorSpelling(cursor, typedef.name);
-		typedef.SetUnnamed();
 
 		AddType(typedef);
 
@@ -624,7 +655,6 @@ class Parser : IRawAllocator
 
 		def = new:this EnumDef();
 		CursorDisplayName(cursor, def.name);
-		def.SetUnnamed();
 		AddType(def);
 
 		let baseType = clang_getEnumDeclIntegerType(cursor);
@@ -711,7 +741,7 @@ class Parser : IRawAllocator
 
 				TypeSpelling(unqalType, result.typeString);
 				if (result.typeString.Contains("unnamed"))
-					aliasFlags |= .Anonymous;
+					aliasFlags |= .Unnamed;
 
 				if (_ == .CXType_Enum)
 				{
@@ -748,6 +778,18 @@ class Parser : IRawAllocator
 			}
 			case .CXType_FunctionProto:
 			{
+				if (realType.kind == .CXType_Elaborated)
+				{
+					String buffer = scope .();
+					TypeSpelling(realType, buffer);
+					if (aliasMap.TryGetValue(buffer, let alias))
+					{
+						aliasFlags |= alias.flags;
+						result.typeString.Set(buffer);
+						break;
+					}
+				}
+
 				aliasFlags |= .Function;
 
 				let functionDef = new:this FunctionTypeDef();
@@ -781,10 +823,11 @@ class Parser : IRawAllocator
 
 				for (let i < numArgs)
 				{
+					let argCursor = clang_Cursor_getArgument(cursor, (.)i);
 					let argType = clang_getArgType(realType, (.)i);
 					let arg = new:this VariableDecl();
 					arg.name.Set(argNames[i]);
-					GetTypeRef(argType, arg.type, false, ?, cursor);
+					GetTypeRef(argType, arg.type, false, ?, argCursor);
 					functionDef.args.Add(arg);
 				}
 			}

@@ -190,12 +190,28 @@ class Generator
 
 		PushIndent();
 
+
 		if (s.innerTypes != null)
 		{
 			for (let t in s.innerTypes)
 			{
 				if (let sDef = t as Parser.StructTypeDef)
+				{
+					if (sDef.index.TryGetValue(let index))
+					{
+						sDef.name.Set("_ANONYMOUS_T_");
+						index.ToString(sDef.name);
+
+						let decl = new:_parser Parser.VariableDecl();
+						decl.name.AppendF($"__anon__field__{index}");
+						decl.type.typeString.Set(sDef.name);
+						decl.inserted = true;
+						s.fields.Insert(index, decl);
+					}
 					GenerateStruct(sDef, writer);
+				}
+				else
+					Runtime.FatalError();
 			}
 		}
 
@@ -203,11 +219,14 @@ class Generator
 		{
 			WriteIndent(writer);
 			writer.Write("public ");
+			if (f.inserted)
+				writer.Write("using ");
 			WriteBeefType(f.type, writer);
 			writer.Write(" ");
 			WriteIdentifier(f.name, writer);
 			writer.WriteLine(";");
 		}
+
 		PopIndent();
 		WriteIndent(writer);
 		writer.WriteLine("}");
