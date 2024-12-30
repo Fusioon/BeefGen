@@ -148,6 +148,12 @@ class Parser : IRawAllocator
 		public ETypeAliasFlags flags;
 	}
 
+	public class MacroDef : TypeDef
+	{
+		public List<String> args;
+		public append String value;
+	}
+
 	protected struct IgnoreWritesRestore : this(SelfOuter inst, bool prev), IDisposable
 	{
 		public void Dispose()
@@ -159,18 +165,17 @@ class Parser : IRawAllocator
 #endregion
 
 	append BumpAllocator _alloc;
-	public append Dictionary<String, TypeDef> _types;
 
-	public append List<EnumDef> _enums;
-	public append List<StructTypeDef> _structs;
-	public append List<FunctionTypeDef> _functions;
-
-	public append Dictionary<String, TypeAliasDef> _aliasMap;
-
+	public append Dictionary<String, TypeDef> types;
+	public append List<EnumDef> enums;
+	public append List<StructTypeDef> structs;
+	public append List<FunctionTypeDef> functions;
+	public append Dictionary<String, TypeAliasDef> aliasMap;
 	public append List<GlobalVariableDecl> globalVars;
+	public append Dictionary<String, MacroDef> macros;
 
 	Settings _settings;
-
+	bool _ignoreWrites = false;
 
 	public void* Alloc(int size, int align) => _alloc.Alloc(size, align);
 
@@ -185,9 +190,6 @@ class Parser : IRawAllocator
 #endif
 	}
 
-
-	bool _ignoreWrites = false;
-
 	void AddType(EnumDef def)
 	{
 		Debug.Assert(def.name.Length > 0);
@@ -195,8 +197,8 @@ class Parser : IRawAllocator
 		if (_ignoreWrites)
 			return;
 
-		_types.Add(def.name, def);
-		_enums.Add(def);
+		types.Add(def.name, def);
+		enums.Add(def);
 	}
 
 	void AddType(StructTypeDef def)
@@ -206,8 +208,8 @@ class Parser : IRawAllocator
 		if (_ignoreWrites)
 			return;
 
-		_types.Add(def.name, def);
-		_structs.Add(def);
+		types.Add(def.name, def);
+		structs.Add(def);
 	}
 
 	void AddType(FunctionTypeDef def)
@@ -217,8 +219,8 @@ class Parser : IRawAllocator
 		if (_ignoreWrites)
 			return;
 
-		_types.Add(def.name, def);
-		_functions.Add(def);
+		types.Add(def.name, def);
+		functions.Add(def);
 	}
 
 	void AddType(TypeAliasDef def)
@@ -228,9 +230,9 @@ class Parser : IRawAllocator
 		if (_ignoreWrites)
 			return;
 
-		if (_types.TryAdd(def.name, def))
+		if (types.TryAdd(def.name, def))
 		{
-			_aliasMap.TryAdd(def.name, def);
+			aliasMap.TryAdd(def.name, def);
 		}
 	}
 
@@ -240,24 +242,49 @@ class Parser : IRawAllocator
 		_ignoreWrites = true;
 		return .(this, prev);
 	}
+
 	protected void RestoreWrites(IgnoreWritesRestore v) => _ignoreWrites = v.prev;
 
-
-	void PrintDiagnostics(CXTranslationUnit tu)
+	void PrintDiagnostics(CXTranslationUnit tu, out bool hadFatalError)
 	{
+		hadFatalError = false;
 	    let numDiagnostics = clang_getNumDiagnostics(tu);
-	    if (numDiagnostics > 0)
+	  	for (let i < numDiagnostics)
 		{
-	        for (let i < numDiagnostics)
+			CXDiagnostic diag = clang_getDiagnostic(tu, i);
+
+			ELogLevel level;
+			switch (clang_getDiagnosticSeverity(diag))
 			{
-	            CXDiagnostic diag = clang_getDiagnostic(tu, i);
-	            CXString diagSpelling = clang_getDiagnosticSpelling(diag);
-				StringView diagSting = StringView(clang_getCString(diagSpelling));
-				Log.Info(diagSting);
-	            clang_disposeString(diagSpelling);
-				clang_disposeDiagnostic(diag);
-	        }
-	    }
+			case .CXDiagnostic_Note, .CXDiagnostic_Ignored: continue;
+			case .CXDiagnostic_Fatal:
+			{
+				level = .Fatal;
+				hadFatalError = true;
+			}
+			case .CXDiagnostic_Error: level = .Error;
+			case .CXDiagnostic_Warning: level = .Warning;
+			}
+
+		    CXString diagSpelling = clang_getDiagnosticSpelling(diag);
+			StringView message = .(clang_getCString(diagSpelling));
+			let loc = clang_getDiagnosticLocation(diag);
+
+			CXFile file = default;
+			uint32 line = 0, col = 0, offset = 0;
+			clang_getSpellingLocation(loc, &file, &line, &col, &offset);
+
+			CXString fileName = clang_getFileName(file);
+			String filePath = scope .();
+			filePath.Append(clang_getCString(fileName));
+			clang_disposeString(fileName);
+
+			Log.Print(level, message, filePath, "", line);
+
+		    clang_disposeString(diagSpelling);
+			clang_disposeDiagnostic(diag);
+		}
+		
 	}
 
 	public Result<void> Parse(Settings settings)
@@ -274,6 +301,7 @@ class Parser : IRawAllocator
 		for (let arg in _settings._commandLineArgs)
 			argv.Add(arg);
 
+		bool hadFatalErr = false;
 		for (let inputFile in _settings._inputFiles)
 		{
 			let index = clang_createIndex(0, 0);
@@ -282,7 +310,8 @@ class Parser : IRawAllocator
 			//let unit = clang_createTranslationUnitFromSourceFile(index, inputFile, (.)argv.Count, argv.Ptr, 0, null);
 			let cursor = clang_getTranslationUnitCursor(unit);
 
-			PrintDiagnostics(unit);
+			PrintDiagnostics(unit, let fatalErr);
+			hadFatalErr |= fatalErr;
 
 			(Self _this, StringView input) ctx = (this, inputFile);
 
@@ -295,7 +324,7 @@ class Parser : IRawAllocator
 			clang_disposeIndex(index);
 		}	
 
-		return .Ok;
+		return hadFatalErr ? .Err : .Ok;
 	}
 
 	CXChildVisitResult ForEachChildren(StringView inputFile, CXCursor cursor, CXCursor parent)
@@ -347,6 +376,9 @@ class Parser : IRawAllocator
 
 	CXChildVisitResult MacroDecl(CXCursor cursor)
 	{
+		if (clang_Cursor_isMacroBuiltin(cursor) != 0)
+			return .CXChildVisit_Continue;
+
 		let macroName = CursorSpelling(cursor, .. scope .());
 
 		let range = clang_getCursorExtent(cursor);
@@ -356,8 +388,19 @@ class Parser : IRawAllocator
 		clang_tokenize(unit, range, &tokens, &tokenCount);
 
 		String buffer = scope .();
+		TypeAliasDef x;
+		let fnLike = clang_Cursor_isMacroFunctionLike(cursor) != 0;
+		uint32 index = 1;
+		if (fnLike)
+		{
+			Runtime.Assert(clang_getTokenKind(tokens[index++]) == .CXToken_Punctuation);
+
+			// Parse args
+		}
+
 		for (uint32 i = 1; i < tokenCount; ++i)
 		{
+			let k = clang_getTokenKind(tokens[i]);
 			CXString tokenSpelling = clang_getTokenSpelling(unit, tokens[i]);
 			buffer.Append(clang_getCString(tokenSpelling));
 			clang_disposeString(tokenSpelling);
@@ -765,7 +808,7 @@ class Parser : IRawAllocator
 
 			default:
 		}
-		if (_aliasMap.TryGetValue(result.typeString, let value))
+		if (aliasMap.TryGetValue(result.typeString, let value))
 		{
 			value.flags |= .Resolved;
 		}

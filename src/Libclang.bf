@@ -597,7 +597,22 @@ static {
 
 	[CLink]
 	public static extern CXString clang_getDiagnosticSpelling(CXDiagnostic diag);
-	
+
+	enum  CXDiagnosticSeverity : c_int
+	{
+	  CXDiagnostic_Ignored = 0 , CXDiagnostic_Note = 1 , CXDiagnostic_Warning = 2 , CXDiagnostic_Error = 3 ,
+	  CXDiagnostic_Fatal = 4
+	}
+
+	[CLink]
+	public static extern CXDiagnosticSeverity clang_getDiagnosticSeverity(CXDiagnostic diag);
+
+	[CLink]
+	public static extern CXSourceLocation clang_getDiagnosticLocation(CXDiagnostic diag);
+
+	[CLink]
+	public static extern void clang_getSpellingLocation(CXSourceLocation location, CXFile* file, c_uint* line, c_uint* column, c_uint* offset);
+
     /**
      * Retrieve the complete set of diagnostics associated with a
      *        translation unit.

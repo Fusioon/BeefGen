@@ -302,13 +302,13 @@ class Generator
 		sw.WriteLine($"namespace {settings.Namespace};");
 		sw.WriteLine();
 
-		for (let e in parser._enums)
+		for (let e in parser.enums)
 		{
 			GenerateEnum(e, sw);
 			sw.WriteLine();
 		}
 
-		for (let s in parser._structs)
+		for (let s in parser.structs)
 		{
 			GenerateStruct(s, sw);
 			sw.WriteLine();
@@ -349,7 +349,7 @@ class Generator
 			}
 		}
 
-		for (let f in parser._functions)
+		for (let f in parser.functions)
  		{
 			 if (f.linkageType != .External)
 				 continue;
@@ -363,7 +363,7 @@ class Generator
 
 		sw.WriteLine();
 
-		for (let kv in parser._aliasMap)
+		for (let kv in parser.aliasMap)
 		{
 			let def = kv.value;
 

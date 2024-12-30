@@ -45,10 +45,11 @@ class Entry3
 		settings.OutFilepath = "src/SDL3.bf";
 
 		Parser parser = scope .();
-		parser.Parse(settings);
-
-		Generator gen = scope .();
-		gen.Generate(parser, settings);
+		if (parser.Parse(settings) case .Ok)
+		{
+			Generator gen = scope .();
+			gen.Generate(parser, settings);
+		}
 
 		/*let path = scope $"{dir}/include/SODIUM_include/sodium.h";
 
