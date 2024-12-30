@@ -2,7 +2,7 @@ FileVersion = 1
 
 [Project]
 Name = "BeefGen"
-StartupObject = "BeefGen.Entry3"
+StartupObject = "BeefGen.Program"
 
 [Configs.Debug.Win64]
 LibPaths = ["$(WorkspaceDir)/libs/libclang/dist/win_x64/libclang.lib"]
