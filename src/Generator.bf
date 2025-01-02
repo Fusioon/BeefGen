@@ -175,9 +175,6 @@ class Generator
 
 		List<String> attrs = scope .(4);
 
-		if (s.name == "crypto_hash_sha512_state")
-			NOP!();
-
 		attrs.Add("CRepr");
 		if (s.tag == .Union)
 			attrs.Add("Union");
@@ -301,6 +298,132 @@ class Generator
 		writer.WriteLine(";");
 	}
 
+	Result<String> GetTypeAndValueFromMacro(Parser.MacroDef macro, String buffer)
+	{
+		String type = "";
+
+		PreprocessorEvaluator.TokenData prev = default;
+		for (let t in macro.tokens)
+		{
+			switch (t.kind)
+			{
+			case .LParent: buffer.Append('(');
+			case .RParent: buffer.Append(')');
+			case .Not: buffer.Append('!');
+			case .Plus:
+				{
+					if (prev.kind == .Literal || prev.kind == .LParent)
+						buffer.Append(" + ");
+					else
+						buffer.Append('+');
+				}
+			case .Minus:
+				{
+					if (prev.kind == .Literal || prev.kind == .LParent)
+						buffer.Append(" - ");
+					else
+						buffer.Append('-');
+				}
+			case .Mult: buffer.Append(" * ");
+			case .Div: buffer.Append(" / ");
+			case .Mod: buffer.Append(" % ");
+
+			case .BitOr: buffer.Append(" | ");
+			case .BitAnd: buffer.Append(" & ");
+			case .BitXor: buffer.Append(" ^ ");
+			case .BitNot: buffer.Append('~');
+			case .BitShiftLeft: buffer.Append(" << ");
+			case .BitShiftRight: buffer.Append(" >> ");
+
+			case .And: buffer.Append(" && "); type = nameof(bool);
+			case .Or: buffer.Append(" || "); type = nameof(bool);
+			case .CmpEQ: buffer.Append(" == "); type = nameof(bool);
+			case .CmpNotEQ: buffer.Append(" != "); type = nameof(bool);
+			case .CmpLess: buffer.Append(" < "); type = nameof(bool);
+			case .CmpLessEQ: buffer.Append(" <= "); type = nameof(bool);
+			case .CmpGreater: buffer.Append("  > "); type = nameof(bool);
+			case .CmpGreaterEQ: buffer.Append(" >= "); type = nameof(bool);
+
+			case .Literal:
+				{
+					switch (t.literal.kind)
+					{
+					case .Bool:
+						{
+							buffer.Append(t.literal.boolValue ? "true" : "false");
+							if (String.IsNullOrEmpty(type))
+								type = nameof(bool);
+						}
+					case .Int64:
+						{
+							if (t.literal.flags & .Hex == .Hex)
+							{
+								buffer.AppendF($"0x{t.literal.u64Value:x}");
+							}
+							else
+							{
+								buffer.Append(t.literal.u64Value);
+							}
+
+							if (String.IsNullOrEmpty(type))
+							{
+								if (t.literal.flags == .Unsigned)
+									type = nameof(uint64);
+								else
+									type = nameof(int64);
+							}
+						}
+					case .Float:
+						{
+							buffer.Append((float)t.literal.doubleValue);
+							buffer.Append('f');
+							if (String.IsNullOrEmpty(type))
+								type = nameof(float);
+						}
+					case .Double:
+						{
+							type = nameof(double);
+							buffer.Append(t.literal.doubleValue);
+						}
+					case .String:
+						{
+							type = nameof(String);
+							buffer.AppendF($"\"{t.literal.stringValue}\"");
+						}
+					case .Unknown:
+						Runtime.FatalError();
+					}
+				}
+
+			case .Identifier:
+				{
+					if (_parser.macros.TryGetValueAlt(t.identifier, let macroRef))
+					{
+						if (macroRef.invalid || macroRef.args != null)
+							return .Err;
+
+						switch (GetTypeAndValueFromMacro(macroRef, buffer))
+						{
+						case .Ok(let val):
+							{
+								if (String.IsNullOrEmpty(type))
+									type = val;
+							}
+						case .Err:
+							return .Err;
+						}
+					}
+					else
+					{
+						Log.Error(scope $"Unknown identifier {t.identifier} in macro {macro.name}");
+					}
+				}
+			}
+		}
+
+		return type;
+	}
+
 	public void Generate(Parser parser, Settings settings)
 	{
 		_parser = parser;
@@ -336,6 +459,41 @@ class Generator
 		sw.WriteLine("public static");
 		sw.WriteLine("{");
 		PushIndent();
+
+		{
+			let startPos = stream.Position;
+			defer
+			{
+				if (startPos != stream.Position)
+					sw.WriteLine();
+			}
+
+			String buffer = scope .(64);
+			for (let kv in parser.macros)
+			{
+				let (?, m) = kv;
+				if (m.invalid || m.args != null)
+					continue;
+
+				switch (GetTypeAndValueFromMacro(m, buffer..Clear()))
+				{
+				case .Ok(let type):
+					{
+						if (buffer.Length > 0)
+						{
+							Runtime.Assert(!String.IsNullOrWhiteSpace(type));
+							WriteIndent(sw);
+							sw.WriteLine($"public const {type} {m.name} = {buffer};");
+						}
+					}
+				case .Err:
+					{
+						Log.Error(scope $"Failed to generate constant for macro '{m.name}'");
+					}
+				}
+			}
+		}
+
 		{
 			let startPos = stream.Position;
 			defer

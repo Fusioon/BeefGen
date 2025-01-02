@@ -153,7 +153,12 @@ class Parser : IRawAllocator
 	public class MacroDef : TypeDef
 	{
 		public List<String> args;
+
+		public append List<PreprocessorEvaluator.TokenData> tokens;
 		public append String value;
+
+		public bool invalid;
+		public String resolvedType;
 	}
 
 	protected struct IgnoreWritesRestore : this(SelfOuter inst, bool prev), IDisposable
@@ -175,6 +180,8 @@ class Parser : IRawAllocator
 	public append Dictionary<String, TypeAliasDef> aliasMap;
 	public append List<GlobalVariableDecl> globalVars;
 	public append Dictionary<String, MacroDef> macros;
+
+	append PreprocessorEvaluator _preprocEvaluator;
 
 	Settings _settings;
 	bool _ignoreWrites = false;
@@ -400,50 +407,82 @@ class Parser : IRawAllocator
 		uint32 tokenCount = 0;
 		clang_tokenize(unit, range, &tokens, &tokenCount);
 
-		String buffer = scope .();
-
 		let macroDef = new:this MacroDef();
-		 CursorSpelling(cursor, macroDef.name);
+		CursorSpelling(cursor, macroDef.name);
+		macros.Add(macroDef.name, macroDef);
 
 		let fnLike = clang_Cursor_isMacroFunctionLike(cursor) != 0;
 		uint32 index = 1;
+
 		if (fnLike)
 		{
+			String buffer = scope .();
+
 			macroDef.args = new:this List<String>();
 
 			for (; index < tokenCount; ++index)
 			{
-				let kind = clang_getTokenKind(tokens[index]);
-
 				buffer.Clear();
+
+				let kind = clang_getTokenKind(tokens[index]);
 				CXString tokenSpelling = clang_getTokenSpelling(unit, tokens[index]);
 				buffer.Append(clang_getCString(tokenSpelling));
 				clang_disposeString(tokenSpelling);
 
 				if (buffer == ")" && kind == .CXToken_Punctuation)
+				{
+					index++;
 					break;
+				}
 
 				if (kind == .CXToken_Identifier)
-					macroDef.args.Add(buffer);
+					macroDef.args.Add(new:this String(buffer));
 
 				if (kind == .CXToken_Keyword)
-					NOP!();
+				{
+					Runtime.NotImplemented();
+				}
 			}
 
-			// Parse args
 		}
 
 		for (; index < tokenCount; ++index)
 		{
-			let kind = clang_getTokenKind(tokens[index]);
 			CXString tokenSpelling = clang_getTokenSpelling(unit, tokens[index]);
-			buffer.Append(clang_getCString(tokenSpelling));
+			macroDef.value.Append(clang_getCString(tokenSpelling));
+			if (index + 1 != tokenCount)
+				macroDef.value.Append(' ');
+
 			clang_disposeString(tokenSpelling);
+
+			let kind = clang_getTokenKind(tokens[index]);
+			if (kind == .CXToken_Keyword)
+			{
+				macroDef.invalid = true;
+			}
+		}
+		clang_disposeTokens(unit, tokens, tokenCount);
+
+		if (!macroDef.invalid)
+		{
+			let source = scope PreprocessorEvaluator.SourceData(macroDef.value);
+			LOOP:
+			while (source.HasData)
+			{
+				switch (_preprocEvaluator.GetToken(source))
+				{
+				case .Ok(let val):
+					macroDef.tokens.Add(val);
+				case .Err:
+					{
+						Log.Error(scope $"Failed to tokenize macro '{macroDef.name}' = '{macroDef.value}'");
+						macroDef.invalid = true;
+						break LOOP;
+					}
+				}
+			}	
 		}
 
-		clang_disposeTokens(unit, tokens, tokenCount);
-		if (tokenCount > 1)
-			Log.Info(scope $"{macroDef.name} {buffer}");
 		return .CXChildVisit_Continue;
 	}
 
