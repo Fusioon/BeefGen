@@ -17,6 +17,7 @@ class Generator
 							"namespace", "using", "out", "in", "ref");
 
 	Parser _parser;
+	Settings _settings;
 
 	append HashSet<String> _createdTypes;
 
@@ -298,6 +299,64 @@ class Generator
 		writer.WriteLine(";");
 	}
 
+	void GenerateAliasFiltered(Parser.TypeAliasDef def, StreamWriter writer)
+	{
+		if ((def.flags & .ForceGenerate) != .ForceGenerate)
+		{
+			/*if ((def.flags & (.Resolved) !=  .Resolved))
+				continue;*/
+
+			if ((def.flags & (.Primitive) == .Primitive) && (def.alias.ptrDepth == 0 && def.alias.sizedArray == null))
+				return;
+		}
+
+		if (def.flags & .Function == .Function)
+		{
+			if (let fn = def.alias.typeDef as Parser.FunctionTypeDef)
+			{
+				fn.name.Set(def.name);
+				GenerateFunction(fn, writer);
+			}
+			else
+			{
+				writer.Write($"typealias {def.name} = ");
+				WriteBeefType(def.alias, writer);
+				writer.WriteLine(";");
+			}
+			return;
+		}
+
+		if (def.flags.HasFlag(.Struct))
+		{
+			let created = _createdTypes.ContainsAlt(def.name);
+
+			if (def.name == def.alias.typeString)
+			{
+				if (!created)
+					writer.WriteLine($"struct {def.name};");
+			}
+			else
+			{
+				let createdAlias = _createdTypes.ContainsAlt(def.alias.typeString);
+
+				if (!createdAlias)
+				{
+					writer.WriteLine($"struct {def.alias.typeString};");
+				}
+				
+				writer.Write($"typealias {def.name} = ");
+				WriteBeefType(def.alias, writer);
+				writer.WriteLine(";");
+			}
+			return;
+		}
+
+		if (def.flags & (.Enum | .Struct | .Function) == 0)
+		{
+			GenerateAlias(def, writer);
+		}
+	}
+
 	Result<String> GetTypeAndValueFromMacro(Parser.MacroDef macro, String buffer)
 	{
 		String type = "";
@@ -427,6 +486,7 @@ class Generator
 	public void Generate(Parser parser, Settings settings)
 	{
 		_parser = parser;
+		_settings = settings;
 
 		Stream stream = settings.outStream;
 		if (stream == null)
@@ -443,6 +503,11 @@ class Generator
 		sw.WriteLine();
 		sw.WriteLine($"namespace {settings.Namespace};");
 		sw.WriteLine();
+
+		for (let kv in parser.aliasMap)
+		{
+			GenerateAliasFiltered(kv.value, sw);
+		}
 
 		for (let e in parser.enums)
 		{
@@ -539,69 +604,5 @@ class Generator
 		sw.WriteLine("}");
 
 		sw.WriteLine();
-
-		for (let kv in parser.aliasMap)
-		{
-			let def = kv.value;
-
-			if ((def.flags & .ForceGenerate) != .ForceGenerate)
-			{
-				/*if ((def.flags & (.Resolved) !=  .Resolved))
-					continue;*/
-
-				if ((def.flags & (.Primitive) == .Primitive) && (def.alias.ptrDepth == 0 && def.alias.sizedArray == null))
-					continue;
-			}
-			else
-				NOP!();
-
-			if (def.flags & .Function == .Function)
-			{
-				if (let fn = def.alias.typeDef as Parser.FunctionTypeDef)
-				{
-					fn.name.Set(def.name);
-					GenerateFunction(fn, sw);
-				}
-				else
-				{
-					sw.Write($"typealias {def.name} = ");
-					WriteBeefType(def.alias, sw);
-					sw.WriteLine(";");
-				}
-				continue;
-			}
-
-			if (def.flags.HasFlag(.Struct))
-			{
-				let created = _createdTypes.ContainsAlt(def.name);
-
-				if (def.name == def.alias.typeString)
-				{
-					if (!created)
-						sw.WriteLine($"struct {def.name};");
-				}
-				else
-				{
-					let createdAlias = _createdTypes.ContainsAlt(def.alias.typeString);
-
-					if (!createdAlias)
-					{
-						sw.WriteLine($"struct {def.alias.typeString};");
-					}
-					
-					sw.Write($"typealias {def.name} = ");
-					WriteBeefType(def.alias, sw);
-					sw.WriteLine(";");
-				}
-
-				continue;
-			}
-
-			if (def.flags & (.Enum | .Struct | .Function) == 0)
-			{
-				GenerateAlias(def, sw);
-			}
-
-		}
 	}
 }
