@@ -13,14 +13,21 @@ namespace BeefGen;
 enum EStorageKind
 {
 	case Unknown,
-	Extern;
+		Static,
+		Extern;
 
 	public static operator Self(CX_StorageClass other)
 	{
-		if (other == .CX_SC_Extern)
+		switch (other)
+		{
+		case .CX_SC_Extern:
 			return .Extern;
+		case .CX_SC_Static:
+			return .Static;
 
-		return .Unknown;
+		default:
+			return .Unknown;
+		}
 	}
 }
 
@@ -53,9 +60,6 @@ class Parser : IRawAllocator
 	public class TypeDef
 	{
 		public append String name;
-
-		public int32? index; // Used to determine where to insert field in case of anonymous types
-
 		public TypeRef baseType;
 	}
 
@@ -89,7 +93,7 @@ class Parser : IRawAllocator
 	{
 		public append String name;
 		public append TypeRef type;
-		public bool inserted;
+		public TypeDef typedef;
 	}
 
 	public class GlobalVariableDecl : VariableDecl
@@ -99,6 +103,14 @@ class Parser : IRawAllocator
 
 	public class StructTypeDef : TypeDef
 	{
+		public enum EInnerTypeFlags
+		{
+			Field = 0x01,
+			Anon = 0x02
+		}
+
+		public struct InnerType : this(TypeDef typedef, EInnerTypeFlags flags);
+
 		public enum ETag
 		{
 			case Unknown,
@@ -111,7 +123,7 @@ class Parser : IRawAllocator
 		public ETag tag;
 		public append List<VariableDecl> fields;
 
-		public List<TypeDef> innerTypes;
+		public List<InnerType> innerTypes;
 		public bool isCompleteDef;
 	}
 
@@ -159,14 +171,6 @@ class Parser : IRawAllocator
 
 		public bool invalid;
 		public String resolvedType;
-	}
-
-	protected struct IgnoreWritesRestore : this(SelfOuter inst, bool prev), IDisposable
-	{
-		public void Dispose()
-		{
-			inst.RestoreWrites(this);
-		}
 	}
 
 #endregion
@@ -259,14 +263,6 @@ class Parser : IRawAllocator
 		}
 	}
 
-	protected IgnoreWritesRestore IgnoreWrites()
-	{
-		let prev = _ignoreWrites;
-		_ignoreWrites = true;
-		return .(this, prev);
-	}
-
-	protected void RestoreWrites(IgnoreWritesRestore v) => _ignoreWrites = v.prev;
 
 	void PrintDiagnostics(CXTranslationUnit tu, out bool hadFatalError)
 	{
@@ -409,7 +405,8 @@ class Parser : IRawAllocator
 
 		let macroDef = new:this MacroDef();
 		CursorSpelling(cursor, macroDef.name);
-		macros.Add(macroDef.name, macroDef);
+		if (!macros.TryAdd(macroDef.name, macroDef))
+			return .CXChildVisit_Continue;
 
 		let fnLike = clang_Cursor_isMacroFunctionLike(cursor) != 0;
 		uint32 index = 1;
@@ -435,13 +432,8 @@ class Parser : IRawAllocator
 					break;
 				}
 
-				if (kind == .CXToken_Identifier)
+				if (kind == .CXToken_Identifier || kind == .CXToken_Keyword)
 					macroDef.args.Add(new:this String(buffer));
-
-				if (kind == .CXToken_Keyword)
-				{
-					Runtime.NotImplemented();
-				}
 			}
 
 		}
@@ -604,11 +596,15 @@ class Parser : IRawAllocator
 				if (flags.HasFlag(.Unnamed))
 				{
 					Runtime.Assert(typedef.innerTypes != null && typedef.innerTypes.Count > 0);
-					let top = typedef.innerTypes.Back;
-					Runtime.Assert(MatchLocation(fieldDecl.type.typeString, top.name));
-					
-					top.name..Set(fieldDecl.name)..ToUpper().Append("_T");
-					fieldDecl.type.typeString.Set(top.name);
+					var top = ref typedef.innerTypes.Back;
+					Runtime.Assert(MatchLocation(fieldDecl.type.typeString, top.typedef.name));
+
+					// Not needed as we can use anonymous types
+					/*top.typedef.name..Set(fieldDecl.name)..ToUpper().Append("_T");
+					fieldDecl.type.typeString.Set(top.typedef.name);*/
+
+					fieldDecl.typedef = top.typedef;
+					top.flags |= .Field;
 				}
 
 				typedef.fields.Add(fieldDecl);
@@ -616,7 +612,7 @@ class Parser : IRawAllocator
 
 		case .CXCursor_StructDecl, .CXCursor_UnionDecl, .CXCursor_EnumDecl, .CXCursor_TypedefDecl:
 			{
-				using (IgnoreWrites())
+				using (SetRestore<bool>(ref _ignoreWrites, true))
 				{
 					TypeDef type;
 					switch (_)
@@ -638,10 +634,18 @@ class Parser : IRawAllocator
 						}
 					default: Runtime.FatalError();
 					}
-					type.index = (.)typedef.fields.Count;
-					typedef.innerTypes ??= new:this List<TypeDef>();
-					typedef.innerTypes.Add(type);
-				}	
+					typedef.innerTypes ??= new:this List<Parser.StructTypeDef.InnerType>();
+					StructTypeDef.EInnerTypeFlags flags = 0;
+					if (type.name.Contains("anonymous"))
+					{
+						let fieldDecl = new:this VariableDecl();
+						fieldDecl.name.AppendF($"__ANON__{typedef.fields.Count}");
+						fieldDecl.typedef = type;
+						typedef.fields.Add(fieldDecl);
+						flags = .Field | .Anon;
+					}
+					typedef.innerTypes.Add(.(type, flags));
+				}
 			}
 		default:
 		}
@@ -660,6 +664,7 @@ class Parser : IRawAllocator
 		CursorSpelling(cursor, typedef.name);
 
 		AddType(typedef);
+
 
 		CXType type = clang_getCursorType(cursor);
 		CXCursor declCursor = clang_getTypeDeclaration(type);
@@ -732,6 +737,7 @@ class Parser : IRawAllocator
 		let decl = new:this GlobalVariableDecl();
 		CursorDisplayName(cursor, decl.name);
 		decl.storageKind = storageClass;
+
 		let type = clang_getCursorType(cursor);
 		GetTypeRef(type, decl.type, false, ?, cursor);
 		globalVars.Add(decl);

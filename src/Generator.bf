@@ -7,6 +7,16 @@ namespace BeefGen;
 
 class Generator
 {
+	enum EProtectionKind
+	{
+		Unspecified,
+		Private,
+		Protected,
+		Public,
+	}
+
+
+
 	const String INDENT_STR = "\t";
 	append String _indent;
 
@@ -18,8 +28,14 @@ class Generator
 
 	Parser _parser;
 	Settings _settings;
+	StreamWriter _writer;
 
-	append HashSet<String> _createdTypes;
+	bool skipNames = false;
+	bool skipEndl = false;
+	EProtectionKind forceProtection = .Unspecified;
+	bool forceUsing;
+
+	//append HashSet<String> _createdTypes;
 
 	void PushIndent()
 	{
@@ -31,51 +47,90 @@ class Generator
 		_indent.RemoveFromEnd(INDENT_STR.Length);
 	}
 
-	void WriteIndent(StreamWriter writer)
+	void WriteIndent()
 	{
-		writer.Write(_indent);
+		_writer.Write(_indent);
 	}
 
-	void WriteAttrs(Span<String> attrs, StreamWriter writer, bool _inline = false)
+	void WriteEnd(StringView value)
+	{
+		if (skipEndl)
+		{
+			_writer.Write(value);
+			return;
+		}
+
+		_writer.WriteLine(value);
+	}
+
+	void WriteName(StringView name)
+	{
+		if (skipNames)
+			return;
+
+		_writer.Write(name);
+	}
+
+	void WriteProtection(EProtectionKind prot)
+	{
+		if (this.forceProtection != .Unspecified)
+		{
+			String protStr;
+			switch (prot)
+			{
+			case .Public: protStr = "public ";
+			case .Protected: protStr = "protected ";
+			case .Private: protStr = "private ";
+			case .Unspecified: protStr = " ";
+			}
+
+			_writer.Write(protStr);
+		}	 
+
+		if (this.forceUsing)
+			_writer.Write("using ");
+	}
+
+	void WriteAttrs(Span<String> attrs, bool _inline = false)
 	{
 		const String ATTR_SUFFIX = nameof(Attribute);
 
 		if (attrs.Length > 0)
 		{
 			if (!_inline)
-				WriteIndent(writer);
+				WriteIndent();
 
-			writer.Write("[");
+			_writer.Write("[");
 			for (let a in attrs)
 			{
 				if (@a.Index != 0)
-					writer.Write(", ");
+					_writer.Write(", ");
 
 				StringView attrView = a;
 
 				if (attrView.EndsWith(ATTR_SUFFIX))
 					attrView.RemoveFromEnd(ATTR_SUFFIX.Length);
 
-				writer.Write(attrView);
+				_writer.Write(attrView);
 			}
 
-			writer.Write("]");
+			_writer.Write("]");
 			if (!_inline)
-				writer.WriteLine();
+				_writer.WriteLine();
 		}
 	}
 
-	void WriteIdentifier(StringView name, StreamWriter writer)
+	void WriteIdentifier(StringView name)
 	{
 		for (let kw in KEYWORDS)
 		{
 			if (kw == name)
 			{
-				writer.Write("@");
+				_writer.Write("@");
 				break;
 			}
 		}
-		writer.Write(name);
+		_writer.Write(name);
 	}
 
 	void WriteBeefType(Parser.TypeRef type, String buffer)
@@ -83,32 +138,35 @@ class Generator
 		StringStream ss = scope .(buffer, .Reference);
 		ss.Position = buffer.Length;
 		StreamWriter writer = scope .(ss, System.Text.Encoding.UTF8, 64);
-		WriteBeefType(type, writer);
+		using(SetRestore<StreamWriter>(ref _writer, writer))
+		{
+			WriteBeefType(type);
+		}
 	}
 
-	void WriteBeefType(Parser.TypeRef type, StreamWriter writer)
+	void WriteBeefType(Parser.TypeRef type)
 	{
 		if (type.typeString.IsEmpty)
 		{
 			if (let fnDecl = type.typeDef as Parser.FunctionTypeDef)
 			{
-				GenerateFunction(fnDecl, writer, true);
+				GenerateFunction(fnDecl, true);
 				return;
 			}
 			else
 				Runtime.FatalError();
 		}
 
-		writer.Write(type.typeString);
+		_writer.Write(type.typeString);
 
 		if (type.sizedArray != null)
 		{
 			for (let dimm in type.sizedArray)
-				writer.Write($"[{dimm}]");
+				_writer.Write($"[{dimm}]");
 		}
 
 		for (int32 _ in 0..<type.ptrDepth)
-			writer.Write("*");
+			_writer.Write("*");
 	}
 
 	Result<void> GetEnumTypeInfo(Parser.EnumDef e, String prefix, out bool hasDupes)
@@ -128,7 +186,7 @@ class Generator
 		return .Ok;
 	}
 
-	void GenerateEnum(Parser.EnumDef e, StreamWriter writer)
+	void GenerateEnum(Parser.EnumDef e)
 	{
 		String baseType = "c_int";
 
@@ -143,34 +201,37 @@ class Generator
 		List<String> attrs = scope .(4);
 		if (hasDupes)
 			attrs.Add("AllowDuplicates");
-		WriteAttrs(attrs, writer);
+		WriteAttrs(attrs);
 
-		WriteIndent(writer);
-		writer.WriteLine($"public enum {e.name} : {baseType}");
-		WriteIndent(writer);
-		writer.WriteLine("{");
+		WriteIndent();
+		WriteProtection(.Public);
+		_writer.Write($"enum ");
+		WriteName(e.name);
+		_writer.WriteLine($" : {baseType}");
+
+		WriteIndent();
+		_writer.WriteLine("{");
 
 		PushIndent();
 		for (let v in e.values)
 		{
-			WriteIndent(writer);
-			WriteIdentifier(v.name, writer);
+			WriteIndent();
+			WriteIdentifier(v.name);
 			if (v.value.Length > 0)
 			{
-				writer.Write(" = ");
-				writer.Write(v.value);
+				_writer.Write(" = ");
+				_writer.Write(v.value);
 			}
-			writer.WriteLine(",");
+			_writer.WriteLine(",");
 		}
 		PopIndent();
 
-		WriteIndent(writer);
-		writer.WriteLine("}");
+		WriteIndent();
+		WriteEnd("}");
 
-		_createdTypes.Add(e.name);
 	}
 
-	void GenerateStruct(Parser.StructTypeDef s, StreamWriter writer)
+	void GenerateStruct(Parser.StructTypeDef s)
 	{
 		Runtime.Assert(s.tag == .Union || s.tag == .Struct);
 
@@ -180,59 +241,97 @@ class Generator
 		if (s.tag == .Union)
 			attrs.Add("Union");
 
-		WriteAttrs(attrs, writer);
-		WriteIndent(writer);
-		writer.WriteLine($"public struct {s.name}");
-		WriteIndent(writer);
-		writer.WriteLine("{");
+		WriteAttrs(attrs);
+		WriteIndent();
+		WriteProtection(.Public);
+		_writer.Write($"struct ");
+		WriteName(s.name);
+		_writer.WriteLine();
+		WriteIndent();
+		_writer.WriteLine("{");
 
 		PushIndent();
 
-
+		let sr_using = SetRestore<bool>(ref forceUsing, false);
+		defer sr_using.Dispose();
+		
 		if (s.innerTypes != null)
 		{
-			for (let t in s.innerTypes)
+			for (let innerType in s.innerTypes)
 			{
-				if (let sDef = t as Parser.StructTypeDef)
-				{
-					if (sDef.index.TryGetValue(let index))
-					{
-						sDef.name.Set("_ANONYMOUS_T_");
-						index.ToString(sDef.name);
+				if (innerType.flags.HasFlag(.Field))
+					continue;
 
-						let decl = new:_parser Parser.VariableDecl();
-						decl.name.AppendF($"__anon__field__{index}");
-						decl.type.typeString.Set(sDef.name);
-						decl.inserted = true;
-						s.fields.Insert(index, decl);
-					}
-					GenerateStruct(sDef, writer);
-				}
-				else
-					Runtime.FatalError();
+				GenerateType(innerType.typedef, _writer);
 			}
 		}
 
-		for (let f in s.fields)
+		Result<Parser.StructTypeDef.InnerType> GetInnerType(Parser.TypeDef type)
 		{
-			WriteIndent(writer);
-			writer.Write("public ");
-			if (f.inserted)
-				writer.Write("using ");
-			WriteBeefType(f.type, writer);
-			writer.Write(" ");
-			WriteIdentifier(f.name, writer);
-			writer.WriteLine(";");
+			if (type == null || s.innerTypes == null)
+				return .Err;
+
+			for (let innerType in s.innerTypes)
+			{
+				if (innerType.typedef == type)
+					return innerType;
+			}
+
+			return .Err;
+		}
+
+		let count = s.fields.Count;
+		for (int i = 0; i < count; ++i)
+		{
+			let f = s.fields[i];
+			if (GetInnerType(f.typedef) case .Ok(let innerType))
+			{
+				using(SetRestore<bool>(ref this.skipEndl, true))
+				{
+					using(SetRestore<bool>(ref this.skipNames, true))
+					{
+						bool needsUsing = false;
+						if (innerType.flags.HasFlag(.Anon))
+							needsUsing  = true;
+
+						using (SetRestore<bool>(ref forceUsing, needsUsing))
+						{
+							GenerateType(f.typedef, _writer);
+						}
+					}
+				}
+			}
+			else
+			{
+				WriteIndent();
+				WriteProtection(.Public);
+				WriteBeefType(f.type);
+			}
+
+			_writer.Write(" ");
+			WriteIdentifier(f.name);
+			if (f.typedef != null)
+			{
+				int j;
+				for (j = i + 1; j < count; ++j)
+				{
+					if (s.fields[j].typedef != f.typedef)
+						break;
+
+					_writer.Write(", ");
+					WriteIdentifier(f.name);
+				}
+				i = j;
+			}
+			_writer.WriteLine(";");
 		}
 
 		PopIndent();
-		WriteIndent(writer);
-		writer.WriteLine("}");
-
-		_createdTypes.Add(s.name);
+		WriteIndent();
+		WriteEnd("}");
 	}
 
-	void GenerateFunction(Parser.FunctionTypeDef f, StreamWriter writer, bool isInline = false)
+	void GenerateFunction(Parser.FunctionTypeDef f, bool isInline = false)
 	{
 		Runtime.Assert((isInline && f.typeOnly) || !isInline);
 
@@ -247,59 +346,61 @@ class Generator
 		attrs.Add(scope $"CallingConvention(.{callconv})");
 		if (!isInline)
 		{
-			WriteAttrs(attrs, writer);
-			WriteIndent(writer);
+			WriteAttrs(attrs);
+			WriteIndent();
 		}
 
 		if (f.typeOnly)
 		{
 			if (!isInline)
-				writer.Write("public ");
-			writer.Write("function ");
+				WriteProtection(.Public);
+			_writer.Write("function ");
 
 			if (isInline)
 			{
-				WriteAttrs(attrs, writer, true);
-				writer.Write(" ");
+				WriteAttrs(attrs, true);
+				_writer.Write(" ");
 			}	
 		}
 		else
 		{
-			writer.Write("public static extern ");
+			WriteProtection(.Public);
+			_writer.Write("static extern ");
 		}
-		WriteBeefType(f.resultType, writer);
-		writer.Write($" {f.name}(");
+		WriteBeefType(f.resultType);
+		_writer.Write($" {f.name}(");
 
 		for (let a in f.args)
 		{
 			if (@a.Index != 0)
-				writer.Write(", ");
+				_writer.Write(", ");
 
-			WriteBeefType(a.type, writer);
-			writer.Write(" ");
-			WriteIdentifier(a.name, writer);
+			WriteBeefType(a.type);
+			_writer.Write(" ");
+			WriteIdentifier(a.name);
 		}
 
 		if (f.isVarArg)
 		{
 			if (f.args.Count > 0)
-				writer.Write(", ");
-			writer.Write("...");
+				_writer.Write(", ");
+			_writer.Write("...");
 		}	
 
-		writer.Write(")");
+		_writer.Write(")");
 		if (!isInline)
-			writer.WriteLine(";");
+			WriteEnd(";");
 	}
 
-	void GenerateAlias(Parser.TypeAliasDef f, StreamWriter writer)
+	void GenerateAlias(Parser.TypeAliasDef f)
 	{
-		writer.Write($"public typealias {f.name} = ");
-		WriteBeefType(f.alias, writer);
-		writer.WriteLine(";");
+		WriteProtection(.Public);
+		_writer.Write($"typealias {f.name} = ");
+		WriteBeefType(f.alias);
+		_writer.WriteLine(";");
 	}
 
-	void GenerateAliasFiltered(Parser.TypeAliasDef def, StreamWriter writer)
+	void GenerateAliasFiltered(Parser.TypeAliasDef def)
 	{
 		if ((def.flags & .ForceGenerate) != .ForceGenerate)
 		{
@@ -315,45 +416,46 @@ class Generator
 			if (let fn = def.alias.typeDef as Parser.FunctionTypeDef)
 			{
 				fn.name.Set(def.name);
-				GenerateFunction(fn, writer);
+				GenerateFunction(fn);
 			}
 			else
 			{
-				writer.Write($"typealias {def.name} = ");
-				WriteBeefType(def.alias, writer);
-				writer.WriteLine(";");
+				_writer.Write($"typealias {def.name} = ");
+				WriteBeefType(def.alias);
+				_writer.WriteLine(";");
 			}
 			return;
 		}
 
+		if (def.name == "SDL_AudioStream")
+			NOP!();
+
 		if (def.flags.HasFlag(.Struct))
 		{
-			let created = _createdTypes.ContainsAlt(def.name);
+			let exists = _parser.types.TryGetValue(def.name, let type);
 
 			if (def.name == def.alias.typeString)
 			{
-				if (!created)
-					writer.WriteLine($"struct {def.name};");
+				if (!exists || (type is Parser.TypeAliasDef))
+					_writer.WriteLine($"struct {def.name};");
 			}
 			else
 			{
-				let createdAlias = _createdTypes.ContainsAlt(def.alias.typeString);
+				let exists2 = _parser.types.ContainsKeyAlt(def.alias.typeString);
 
-				if (!createdAlias)
+				if (!exists2)
 				{
-					writer.WriteLine($"struct {def.alias.typeString};");
+					_writer.WriteLine($"struct {def.alias.typeString};");
 				}
 				
-				writer.Write($"typealias {def.name} = ");
-				WriteBeefType(def.alias, writer);
-				writer.WriteLine(";");
+				GenerateAlias(def);
 			}
 			return;
 		}
 
 		if (def.flags & (.Enum | .Struct | .Function) == 0)
 		{
-			GenerateAlias(def, writer);
+			GenerateAlias(def);
 		}
 	}
 
@@ -475,12 +577,34 @@ class Generator
 					else
 					{
 						Log.Error(scope $"Unknown identifier {t.identifier} in macro {macro.name}");
+						return .Err;
 					}
 				}
 			}
 		}
 
 		return type;
+	}
+
+	void GenerateType(Parser.TypeDef type, StreamWriter writer)
+	{
+		if (let structDef = type as Parser.StructTypeDef)
+		{
+			GenerateStruct(structDef);
+			return;
+		}
+
+		if (let enumDef = type as Parser.EnumDef)
+		{
+			GenerateEnum(enumDef);
+			return;
+		}
+
+		if (let fnDef = type as Parser.FunctionTypeDef)
+		{
+			GenerateFunction(fnDef, false);
+			return;
+		}	
 	}
 
 	public void Generate(Parser parser, Settings settings)
@@ -496,33 +620,33 @@ class Generator
 			stream = fs;
 		}
 
-		StreamWriter sw = scope .(stream, System.Text.UTF8Encoding.UTF8, 4096);
+		_writer = scope .(stream, System.Text.UTF8Encoding.UTF8, 4096);
 
-		sw.WriteLine("using System;");
-		sw.WriteLine("using System.Interop;");
-		sw.WriteLine();
-		sw.WriteLine($"namespace {settings.Namespace};");
-		sw.WriteLine();
+		_writer.WriteLine("using System;");
+		_writer.WriteLine("using System.Interop;");
+		_writer.WriteLine();
+		_writer.WriteLine($"namespace {settings.Namespace};");
+		_writer.WriteLine();
 
 		for (let kv in parser.aliasMap)
 		{
-			GenerateAliasFiltered(kv.value, sw);
+			GenerateAliasFiltered(kv.value);
 		}
 
 		for (let e in parser.enums)
 		{
-			GenerateEnum(e, sw);
-			sw.WriteLine();
+			GenerateEnum(e);
+			_writer.WriteLine();
 		}
 
 		for (let s in parser.structs)
 		{
-			GenerateStruct(s, sw);
-			sw.WriteLine();
+			GenerateStruct(s);
+			_writer.WriteLine();
 		}
 
-		sw.WriteLine("public static");
-		sw.WriteLine("{");
+		_writer.WriteLine("public static");
+		_writer.WriteLine("{");
 		PushIndent();
 
 		{
@@ -530,7 +654,7 @@ class Generator
 			defer
 			{
 				if (startPos != stream.Position)
-					sw.WriteLine();
+					_writer.WriteLine();
 			}
 
 			String buffer = scope .(64);
@@ -547,8 +671,8 @@ class Generator
 						if (buffer.Length > 0)
 						{
 							Runtime.Assert(!String.IsNullOrWhiteSpace(type));
-							WriteIndent(sw);
-							sw.WriteLine($"public const {type} {m.name} = {buffer};");
+							WriteIndent();
+							_writer.WriteLine($"public const {type} {m.name} = {buffer};");
 						}
 					}
 				case .Err:
@@ -564,7 +688,7 @@ class Generator
 			defer
 			{
 				if (startPos != stream.Position)
-					sw.WriteLine();
+					_writer.WriteLine();
 			}
 
 			for (let v in parser.globalVars)
@@ -576,16 +700,22 @@ class Generator
 				case .Extern:
 					{
 						attrs.Add("CLink");
-						WriteAttrs(attrs, sw);
-						WriteIndent(sw);
-						sw.Write("public static extern ");
-						WriteBeefType(v.type, sw);
-						sw.WriteLine($" {v.name};");
+						WriteAttrs(attrs);
+						WriteIndent();
+						WriteProtection(.Public);
+						_writer.Write("static extern ");
+						WriteBeefType(v.type);
+						_writer.WriteLine($" {v.name};");
+					}
+
+				case .Static:
+					{
+
 					}
 
 				case .Unknown:
 					{
-
+						Runtime.NotImplemented();
 					}
 				}
 			}
@@ -596,13 +726,13 @@ class Generator
 			 if (f.linkageType != .External)
 				 continue;
 
-			 GenerateFunction(f, sw);
-			 sw.WriteLine();
+			 GenerateFunction(f);
+			 _writer.WriteLine();
 		}
 
 		PopIndent();
-		sw.WriteLine("}");
+		WriteEnd("}");
 
-		sw.WriteLine();
+		_writer.WriteLine();
 	}
 }
