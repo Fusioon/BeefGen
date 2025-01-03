@@ -202,7 +202,7 @@ class PreprocessorEvaluator
 
 		static bool IsHexChar (char8 c) => (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
 
-		while (source.HasData && source.currentChar.IsDigit || (flags.HasFlag(.Hex) && IsHexChar(source.currentChar)))
+		while (source.HasData && (source.currentChar.IsDigit || (flags.HasFlag(.Hex) && IsHexChar(source.currentChar))))
 		{
 			source.NextChar();
 		}
