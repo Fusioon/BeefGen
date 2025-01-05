@@ -166,7 +166,7 @@ class Parser : IRawAllocator
 	{
 		public List<String> args;
 
-		public append List<PreprocessorEvaluator.TokenData> tokens;
+		public append List<PreprocessorTokenizer.TokenData> tokens;
 		public append String value;
 
 		public bool invalid;
@@ -185,7 +185,7 @@ class Parser : IRawAllocator
 	public append List<GlobalVariableDecl> globalVars;
 	public append Dictionary<String, MacroDef> macros;
 
-	append PreprocessorEvaluator _preprocEvaluator;
+	append PreprocessorTokenizer _preprocEvaluator;
 
 	Settings _settings;
 	bool _ignoreWrites = false;
@@ -457,7 +457,7 @@ class Parser : IRawAllocator
 
 		if (!macroDef.invalid)
 		{
-			let source = scope PreprocessorEvaluator.SourceData(macroDef.value);
+			let source = scope PreprocessorTokenizer.SourceData(macroDef.value);
 			LOOP:
 			while (source.HasData)
 			{

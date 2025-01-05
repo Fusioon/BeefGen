@@ -463,11 +463,13 @@ class Generator
 	{
 		String type = "";
 
-		PreprocessorEvaluator.TokenData prev = default;
+		PreprocessorTokenizer.TokenData prev = default;
 		for (let t in macro.tokens)
 		{
 			switch (t.kind)
 			{
+			case .Questionmark, .Colon: return .Err;
+
 			case .LParent: buffer.Append('(');
 			case .RParent: buffer.Append(')');
 			case .Not: buffer.Append('!');
@@ -509,6 +511,57 @@ class Generator
 				{
 					switch (t.literal.kind)
 					{
+					case .Char:
+						{
+							if (t.literal.flags & .Hex == .Hex)
+							{
+								buffer.AppendF($"'\\x{t.literal.charValue:X}'");
+							}
+							else if (t.literal.charValue < (.)0x80)
+							{
+								buffer.Append('\'');
+								switch (t.literal.charValue)
+								{
+								case 0: buffer.Append("\\0");
+								case '\a': buffer.Append("\\a");
+								case '\b': buffer.Append("\\b");
+								case '\f': buffer.Append("\\f");
+								case '\n': buffer.Append("\\n");
+								case '\r': buffer.Append("\\r");
+								case '\t': buffer.Append("\\t");
+								case '\v': buffer.Append("\\v");
+								case '\\': buffer.Append(@"\\");
+								case '\'': buffer.Append("\\'");
+								case '\"': buffer.Append("\\\"");
+								default: buffer.Append(_);
+								}
+								buffer.Append('\'');
+							}
+							else
+							{
+								buffer.AppendF($"\\'\\u{{{t.literal.charValue:X}}}\\'");
+							}
+
+							switch (t.literal.type)
+							{
+							case .Char8:
+								type = nameof(char8);
+
+							case .Char16:
+								type = nameof(char16);
+
+							case .Char32:
+								type = nameof(char32);
+
+							case .CharWide:
+								type = nameof(c_wchar);
+
+							case .Int32, .Int64, .String8, .String16, .String32, .StringWide, .Undefined:
+								Runtime.FatalError();
+							}
+
+						}
+
 					case .Bool:
 						{
 							buffer.Append(t.literal.boolValue ? "true" : "false");

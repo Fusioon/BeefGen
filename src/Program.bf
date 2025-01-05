@@ -25,6 +25,17 @@ class Program
 
 		{
 			Settings settings = scope .();
+			settings.Namespace = "Test";
+			settings.AddInputFileF($"{dir}/include/test.h");
+			settings.AddIncludeDirF($"{dir}/include");
+			settings.typeFilter = new (typename, kind, source) => {
+				return source.path.Contains("include");
+			};
+			settings.OutFilepath = "src/Test.bf";
+			Generate(settings);
+		}
+		/*{
+			Settings settings = scope .();
 			settings.Namespace = "Sodium";
 			settings.AddInputFileF($"{dir}/include/SODIUM_include/sodium.h");
 			settings.AddIncludeDirF($"{dir}/include/SODIUM_include");
@@ -57,7 +68,7 @@ class Program
 			};
 			settings.OutFilepath = "src/Box2D.bf";
 			Generate(settings);
-		}
+		}*/
 
 	}
 }

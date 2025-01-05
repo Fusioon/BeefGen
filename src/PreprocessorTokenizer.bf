@@ -1,13 +1,16 @@
 using System;
 using System.Diagnostics;
+using System.Collections;
 namespace BeefGen;
 
-class PreprocessorEvaluator
+class PreprocessorTokenizer
 {
 	public enum ETokenKind
 	{
 		LParent,
 		RParent,
+		Questionmark,
+		Colon,
 		Not,
 		Plus,
 		Minus,
@@ -36,10 +39,26 @@ class PreprocessorEvaluator
 	{
 		Unknown,
 		Bool,
+		Char,
 		Int64,
 		Float,
 		Double,
 		String
+	}
+
+	public enum ELiteralType
+	{
+		Undefined,
+		Char8,
+		Char16,
+		Char32,
+		CharWide,
+		Int32,
+		Int64,
+		String8,
+		String16,
+		String32,
+		StringWide
 	}
 
 	public struct LiteralInfo
@@ -56,6 +75,7 @@ class PreprocessorEvaluator
 		public struct Data
 		{
 			public bool boolValue;
+			public char32 charValue;
 			public int64 i64Value;
 			public uint64 u64Value;
 			public double doubleValue;
@@ -65,11 +85,19 @@ class PreprocessorEvaluator
 		public ELiteralKind kind;
 		public using Data _data;
 		public EFlags flags = default;
+		public ELiteralType type = default;
+		public StringView valueView = default;
 
 		public this(bool value)
 		{
 			kind = .Bool;
 			boolValue = value;
+		}
+
+		public this(char32 value)
+		{
+			kind = .Char;
+			charValue = value;
 		}
 
 		public this(int64 value)
@@ -184,7 +212,6 @@ class PreprocessorEvaluator
 
 	Result<TokenData> ParseNumber(SourceData source)
 	{
-		ELiteralKind kind = .Unknown;
 		LiteralInfo.EFlags flags = .None;
 
 		let start = source.position;
@@ -217,16 +244,21 @@ class PreprocessorEvaluator
 		{
 			switch (source.currentChar)
 			{
-			case 'u', 'U' when (!unsigned && long == 0 && !fp):
+			case 'u', 'U' when (!unsigned && !fp):
 				{
 					unsigned = true;
 					source.NextChar();
 					continue;
 				}
-			case 'l', 'L' when (long < 2 && !fp):
+			case 'l', 'L' when (long == 0 && !fp):
 				{
 					long++;
 					source.NextChar();
+					if (source.currentChar == 'l' || source.currentChar == 'L')
+					{
+						long++;
+						source.NextChar();
+					}	
 					continue;
 				}
 			case '.' when (!fp && !unsigned && long == 0):
@@ -272,11 +304,11 @@ class PreprocessorEvaluator
 
 		if (fp || exponent)
 		{
-			if (value.Length == 1)
-				return .Err;
-
 			if (explicitFloat)
 				value.RemoveFromEnd(1);
+			
+			if (value.Length == 1)
+				return .Err;
 
 			switch(double.Parse(value))
 			{
@@ -286,6 +318,7 @@ class PreprocessorEvaluator
 					if (explicitFloat)
 						info.kind = .Float;
 
+					info.valueView = value;
 					return TokenData(.Literal, info);
 				}
 			case .Err:
@@ -315,6 +348,7 @@ class PreprocessorEvaluator
 			{
 				LiteralInfo info = .(val);
 				info.flags = flags;
+				info.valueView = value;
 
 				return TokenData(.Literal, info);
 			}
@@ -335,6 +369,9 @@ class PreprocessorEvaluator
 		}
 
 		SkipWhitespace(source);
+
+		char8 literalPrefix = 0;
+		int32 prefixLength = 0;
 
 		switch (source.currentChar)
 		{
@@ -404,13 +441,24 @@ class PreprocessorEvaluator
 				return TokenData(.BitOr);
 			}
 		case '^': return Advance(.BitXor);
+
+		case 'u', 'U', 'L':
+			{
+				prefixLength++;
+				literalPrefix = _;
+				source.NextChar();
+				if (_ == 'u' && source.currentChar == '8')
+				{
+					prefixLength++;
+					source.NextChar();
+				}
+			}
 		}
 
 		if (source.currentChar == '"')
 		{
 			source.NextChar();
 			let start = source.position;
-			char8 prevC = 0;
 			while (source.HasData)
 			{
 				if (source.currentChar == '"' && source.prevChar != '\\')
@@ -419,11 +467,60 @@ class PreprocessorEvaluator
 					break;
 				}
 
-				prevC = source.currentChar;
 				source.NextChar();
 			}
 			StringView literal = source.input.Substring(start, source.position - start - 1);
-			return TokenData(.Literal, LiteralInfo(literal));
+			ELiteralType type;
+			switch (literalPrefix)
+			{
+			case 'u': type = .String8;
+			case 'l', 'L':
+				{
+					type = .String32;
+				}
+			default:
+				{
+					type = .String8;
+				}
+			}
+			return TokenData(.Literal, LiteralInfo(literal) { type = type });
+		}
+
+		if (source.currentChar == '\'')
+		{
+			source.NextChar();
+			char32 value = 0;
+			while (source.HasData)
+			{
+				if (source.currentChar == '\'' && source.prevChar != '\\')
+				{
+					source.NextChar();
+					break;
+				}
+
+				source.NextChar();
+			}
+			ELiteralType type;
+			switch (literalPrefix)
+			{
+			case 'u', 'U':
+				{
+					if (prefixLength == 2)
+						type = .Char8;
+					else
+						type = .Char16;
+				}
+			case 'l', 'L':
+				{
+					type = .Char32;
+				}
+			default:
+				{
+					type = .Char8;
+				}
+			}
+			return TokenData(.Literal, LiteralInfo(value) { type = type });
+			
 		}
 
 		if (source.currentChar.IsDigit || source.currentChar == '.')
@@ -435,7 +532,7 @@ class PreprocessorEvaluator
 		{
 			bool ValidIdentifierChar(char8 c) =>  (source.currentChar.IsLetterOrDigit || source.currentChar == '_');
 
-			let start = source.position;
+			let start = (source.position - prefixLength);
 			while (source.HasData && ValidIdentifierChar(source.currentChar))
 			{
 				source.NextChar();
