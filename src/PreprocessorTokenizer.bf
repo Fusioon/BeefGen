@@ -10,6 +10,8 @@ class PreprocessorTokenizer
 		LParent,
 		RParent,
 		Questionmark,
+		Stringify,
+		Concat,
 		Colon,
 		Not,
 		Plus,
@@ -66,9 +68,13 @@ class PreprocessorTokenizer
 		public enum EFlags
 		{
 			None = 0x00,
-			Hex = 0x01,
-			Unsigned = 0x02,
-			LongLong = 0x04
+			Unsigned = 0x01,
+			LongLong = 0x02,
+
+
+			Hex = 0x10,
+			Octal = 0x20,
+			Bin = 0x40
 		}
 
 		[Union]
@@ -210,28 +216,99 @@ class PreprocessorTokenizer
 		}
 	}
 
-	Result<TokenData> ParseNumber(SourceData source)
+	Result<TokenData> ParseNumberLiteral(SourceData source)
 	{
+		Runtime.Assert(source.currentChar.IsDigit || source.currentChar == '.');
+
 		LiteralInfo.EFlags flags = .None;
 
 		let start = source.position;
+		uint64 value = 0;
 
 		if (source.currentChar == '0')
 		{
 			source.NextChar();
 
-			if (source.currentChar == 'x' || source.currentChar == 'X')
+			BASE_SELECT:
+			switch (source.currentChar)
 			{
-				flags = .Hex;
-				source.NextChar();
+			case 'x', 'X':
+				{
+					flags = .Hex;
+					source.NextChar();
+
+					while (source.HasData)
+					{
+						let c = source.currentChar;
+						if (c >= '0' && c <= '9')
+						{
+							value *= 16;
+							value += (.)(c - '0');
+						}
+						else if (c >= 'a' && c <= 'f')
+						{
+							value *= 16;
+							value += 10 + (.)(c - 'a');
+						}
+						else if (c >= 'A' && c <= 'F')
+						{
+							value *= 16;
+							value += 10 + (.)(c - 'A');
+						}
+						else
+							break BASE_SELECT;
+
+						source.NextChar();
+					}
+				}
+			case 'b':
+				{
+					flags = .Bin;
+					source.NextChar();
+
+					while (source.HasData)
+					{
+						let c = source.currentChar;
+						if (c >= '0' && c <= '1')
+						{
+							value *= 2;
+							value += (.)(c - '0');
+						}
+						else
+							break BASE_SELECT;
+
+						source.NextChar();
+					}
+				}
+
+			when (_ >= '0' && _ <= '8'):
+				{
+					flags = .Octal;
+					while (source.HasData)
+					{
+						let c = source.currentChar;
+						if (c >= '0' && c <= '7')
+						{
+							value *= 8;
+							value += (.)(c - '0');
+						}
+						else
+							break BASE_SELECT;
+
+						source.NextChar();
+					}
+				}
 			}
 		}
 
-		static bool IsHexChar (char8 c) => (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
-
-		while (source.HasData && (source.currentChar.IsDigit || (flags.HasFlag(.Hex) && IsHexChar(source.currentChar))))
+		if (flags == .None)
 		{
-			source.NextChar();
+			while (source.HasData && source.currentChar.IsDigit)
+			{
+				value *= 10;
+				value += (.)(source.currentChar - '0');
+				source.NextChar();
+			}
 		}
 
 		bool explicitFloat = false;
@@ -300,17 +377,17 @@ class PreprocessorTokenizer
 			break;
 		}
 
-		StringView value = source.input.Substring(start, source.position - start);
+		StringView valueView = source.input.Substring(start, source.position - start);
 
 		if (fp || exponent)
 		{
 			if (explicitFloat)
-				value.RemoveFromEnd(1);
+				valueView.RemoveFromEnd(1);
 			
-			if (value.Length == 1)
+			if (valueView.Length == 1)
 				return .Err;
 
-			switch(double.Parse(value))
+			switch(double.Parse(valueView))
 			{
 			case .Ok(let val):
 				{
@@ -318,12 +395,12 @@ class PreprocessorTokenizer
 					if (explicitFloat)
 						info.kind = .Float;
 
-					info.valueView = value;
+					info.valueView = valueView;
 					return TokenData(.Literal, info);
 				}
 			case .Err:
 				{
-					Log.Error(scope $"Failed to parse float literal '{value}'");
+					Log.Error(scope $"Failed to parse float literal '{valueView}'");
 					return .Err;
 				}
 			}
@@ -337,27 +414,220 @@ class PreprocessorTokenizer
 			flags |= .LongLong;
 		if (unsigned)
 		{
-			value.RemoveFromEnd(1);
 			flags |= .Unsigned;
 		}
-		value.RemoveFromEnd(long);
 
-		switch(uint64.Parse(value, style))
+		return TokenData(.Literal, LiteralInfo(value) { flags = flags, valueView = valueView });
+	}
+
+	Result<TokenData> ParseStringLiteral(SourceData source, char8 literalPrefix, int32 prefixLength)
+	{
+		Runtime.Assert(source.currentChar == '"');
+		source.NextChar();
+		let start = source.position;
+		while (source.HasData)
 		{
-		case .Ok(let val):
+			if (source.currentChar == '"' && source.prevChar != '\\')
 			{
-				LiteralInfo info = .(val);
-				info.flags = flags;
-				info.valueView = value;
+				source.NextChar();
+				break;
 
-				return TokenData(.Literal, info);
 			}
-		case .Err:
+
+			source.NextChar();
+		}
+		if (start == source.position)
+			return .Err;
+
+		StringView literal = source.input.Substring(start, source.position - start - 1);
+		ELiteralType type;
+		switch (literalPrefix)
+		{
+		case 'u':
 			{
-				Log.Error(scope $"Failed to parse integer literal '{value}'");
-				return .Err;
+				if (prefixLength == 2)
+					type = .String8;
+				else
+					type = .String16;
+			}
+		case 'U': type = .String32;
+		case 'L': type = .StringWide;
+		default: type = .String8;
+		}
+		return TokenData(.Literal, LiteralInfo(literal) { type = type, valueView = literal });
+	}
+
+	Result<char32> ParseHexChar(SourceData source, out int32 length)
+	{
+		uint32 tmp = 0;
+		length = 0;
+		while (source.HasData)
+		{
+			let c = source.currentChar;
+			if (c >= '0' && c <= '9')
+			{
+				tmp *= 16;
+				tmp += (.)(c - '0');
+			}
+			else if (c >= 'a' && c <= 'f')
+			{
+				tmp *= 16;
+				tmp += 10 + (.)(c - 'a');
+			}
+			else if (c >= 'A' && c <= 'F')
+			{
+				tmp *= 16;
+				tmp += 10 + (.)(c - 'A');
+			}
+			else
+			{
+				break;
+			}
+
+			length++;
+			source.NextChar();
+		}
+		if (length == 0)
+			return .Err;
+
+		return .Ok((char32)tmp);
+	}
+
+	Result<TokenData> ParseCharLiteral(SourceData source, char8 literalPrefix, int32 prefixLength)
+	{
+		Runtime.Assert(source.currentChar == '\'');
+
+		LiteralInfo.EFlags flags = .None;
+
+		source.NextChar();
+		char32 value = 0;
+		let start = source.position;
+
+		if (source.currentChar == '\\')
+		{
+			source.NextChar();
+			BASE_SELECT:
+			switch (source.currentChar)
+			{
+			case '\'':
+				{
+					value = '\'';
+				}
+			case '\"':
+				{
+					value = '"';
+				}
+			case '\\':
+				{
+					value = '\\';
+				}
+			case 'a':
+				{
+					value = '\a';
+				}
+			case 'b':
+				{
+					value = '\b';
+				}
+			case 'f':
+				{
+					value = '\f';
+				}
+			case 'n':
+				{
+					value = '\n';
+				}
+			case 'r':
+				{
+					value = '\r';
+				}
+			case 't':
+				{
+					value = '\t';
+				}
+			case 'v':
+				{
+					value = '\v';
+				}
+
+			case 'U', 'x':
+				{
+					source.NextChar();
+					flags |= .Hex;
+					value = Try!(ParseHexChar(source, let length));
+					if (_ == 'x' && value > (.)0xFF)
+						return .Err;
+					if (_ == 'U' && length != 8)
+					{
+						return .Err;
+					}
+				}
+			case '0':
+				{
+					source.NextChar();
+					if (source.currentChar == '\'')
+					{
+						value = '\0';
+						break BASE_SELECT;
+					}
+
+					if (source.currentChar >= '0' && source.currentChar <= '7')
+					{
+						flags |= .Octal;
+
+						uint32 tmp = 0;
+						while (source.HasData)
+						{
+							let c = source.currentChar;
+							if (c >= '0' && c <= '7')
+							{
+								tmp *= 8;
+								tmp += (.)(c - '0');
+							}
+						}
+						value = (.)tmp;
+						break BASE_SELECT;
+					}
+
+					return .Err;
+				}
 			}
 		}
+		else
+		{
+			(value, let len) = source.input.GetChar32(source.position);
+			for (let i < len)
+				source.NextChar();
+		}
+
+		if (start == source.position)
+			return .Err;
+
+		if (source.currentChar != '\'')
+			return .Err;
+
+		source.NextChar();
+
+		ELiteralType type;
+		switch (literalPrefix)
+		{
+		case 'u':
+			{
+				if (prefixLength == 2)
+					type = .Char8;
+				else
+					type = .Char16;
+			}
+		case 'U': type = .Char32;
+		case 'L': type = .CharWide;
+		default: type = .Char8;
+		}
+		let valueView = source.input.Substring(start, source.position - start - 1);
+		return TokenData(.Literal, LiteralInfo(value) {
+			type = type,
+			valueView = valueView,
+			flags = flags
+		});
 	}
 
 	public Result<TokenData> GetToken(SourceData source)
@@ -442,6 +712,15 @@ class PreprocessorTokenizer
 			}
 		case '^': return Advance(.BitXor);
 
+		case '#':
+			{
+				source.NextChar();
+				if (source.currentChar == '#')
+					return Advance(.Concat);
+
+				return TokenData(.Stringify);
+			}
+
 		case 'u', 'U', 'L':
 			{
 				prefixLength++;
@@ -457,77 +736,20 @@ class PreprocessorTokenizer
 
 		if (source.currentChar == '"')
 		{
-			source.NextChar();
-			let start = source.position;
-			while (source.HasData)
-			{
-				if (source.currentChar == '"' && source.prevChar != '\\')
-				{
-					source.NextChar();
-					break;
-				}
-
-				source.NextChar();
-			}
-			StringView literal = source.input.Substring(start, source.position - start - 1);
-			ELiteralType type;
-			switch (literalPrefix)
-			{
-			case 'u': type = .String8;
-			case 'l', 'L':
-				{
-					type = .String32;
-				}
-			default:
-				{
-					type = .String8;
-				}
-			}
-			return TokenData(.Literal, LiteralInfo(literal) { type = type });
+			return ParseStringLiteral(source, literalPrefix, prefixLength);
 		}
 
 		if (source.currentChar == '\'')
 		{
-			source.NextChar();
-			char32 value = 0;
-			while (source.HasData)
-			{
-				if (source.currentChar == '\'' && source.prevChar != '\\')
-				{
-					source.NextChar();
-					break;
-				}
-
-				source.NextChar();
-			}
-			ELiteralType type;
-			switch (literalPrefix)
-			{
-			case 'u', 'U':
-				{
-					if (prefixLength == 2)
-						type = .Char8;
-					else
-						type = .Char16;
-				}
-			case 'l', 'L':
-				{
-					type = .Char32;
-				}
-			default:
-				{
-					type = .Char8;
-				}
-			}
-			return TokenData(.Literal, LiteralInfo(value) { type = type });
-			
+			return ParseCharLiteral(source, literalPrefix, prefixLength);
 		}
 
 		if (source.currentChar.IsDigit || source.currentChar == '.')
 		{
-			return ParseNumber(source);
+			return ParseNumberLiteral(source);
 		}
 
+		IDENTIFIER_OR_BOOL_LITERAL:
 		if (source.currentChar.IsLetter || source.currentChar == '_')
 		{
 			bool ValidIdentifierChar(char8 c) =>  (source.currentChar.IsLetterOrDigit || source.currentChar == '_');

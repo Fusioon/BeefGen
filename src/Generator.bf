@@ -427,9 +427,6 @@ class Generator
 			return;
 		}
 
-		if (def.name == "SDL_AudioStream")
-			NOP!();
-
 		if (def.flags.HasFlag(.Struct))
 		{
 			let exists = _parser.types.TryGetValue(def.name, let type);
@@ -468,7 +465,7 @@ class Generator
 		{
 			switch (t.kind)
 			{
-			case .Questionmark, .Colon: return .Err;
+			case .Questionmark, .Colon, .Stringify, .Concat: return .Err;
 
 			case .LParent: buffer.Append('(');
 			case .RParent: buffer.Append(')');
@@ -513,9 +510,21 @@ class Generator
 					{
 					case .Char:
 						{
-							if (t.literal.flags & .Hex == .Hex)
+							bool HasEscapeSequence(char32 c)
 							{
-								buffer.AppendF($"'\\x{t.literal.charValue:X}'");
+								switch(c)
+								{
+								case '\0','\a','\b','\f','\n','\r','\t','\v','\\','\'','\"':
+									return true;
+								default:
+									return false;
+								}
+							}	 
+
+							if (t.literal.charValue <= (.)0xFF && ((t.literal.flags & .Hex == .Hex) ||
+								(t.literal.charValue.IsControl && !HasEscapeSequence(t.literal.charValue))))
+							{
+								buffer.AppendF($"'\\x{((uint32)t.literal.charValue):x}'");
 							}
 							else if (t.literal.charValue < (.)0x80)
 							{
@@ -539,7 +548,7 @@ class Generator
 							}
 							else
 							{
-								buffer.AppendF($"\\'\\u{{{t.literal.charValue:X}}}\\'");
+								buffer.AppendF($"'\\u{{{((uint32)t.literal.charValue):x}}}'");
 							}
 
 							switch (t.literal.type)
