@@ -466,12 +466,6 @@ class Parser : IRawAllocator
 				macroDef.value.Append(' ');
 
 			clang_disposeString(tokenSpelling);
-
-			let kind = clang_getTokenKind(tokens[index]);
-			if (kind == .CXToken_Keyword)
-			{
-				macroDef.invalid = true;
-			}
 		}
 		clang_disposeTokens(unit, tokens, tokenCount);
 
