@@ -16,13 +16,19 @@ enum EDeclKind
 	Macro
 }
 
+
+
 public class Settings
 {
 	public delegate bool TypeFilterDelegate(StringView typename, EDeclKind kind, SourceInfo source);
 	internal append List<String> _includeDirs ~ ClearAndDeleteItems!(_);
 	internal append List<String> _inputFiles ~ ClearAndDeleteItems!(_);
 	internal append List<String> _commandLineArgs ~ ClearAndDeleteItems!(_);
+	internal append List<String> _preprocDefines ~ ClearAndDeleteItems!(_);
+	internal append List<String> _preprocUndefines ~ ClearAndDeleteItems!(_);
 	internal append String _outputNamespace;
+
+	internal append String _langStd;
 
 	append String _outFilepath;
 	public Stream outStream;
@@ -38,6 +44,8 @@ public class Settings
 	public void AddCommandLineArg(StringView arg) => _commandLineArgs.Add(new .(arg));
 	public void AddCommandLineArgF(StringView format, params Span<Object> args) => _commandLineArgs.Add(new String()..AppendF(format, params args));
 
+	public void AddPreprocessorDefinition(StringView def) => _preprocDefines.Add(new .(def));
+	public void AddPreprocessorUndefine(StringView undef) => _preprocUndefines.Add(new .(undef));
 
 	public StringView Namespace
 	{
@@ -50,4 +58,11 @@ public class Settings
 		get => _outFilepath;
 		set => _outFilepath.Set(value);
 	}
+
+	public StringView LangStandard
+	{
+		get => _langStd;
+		set => _langStd.Set(value);
+	}
+
 }

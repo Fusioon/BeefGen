@@ -10,11 +10,19 @@ class Program
 	static void Generate(Settings settings)
 	{
 		Parser parser = scope .();
-		if (parser.Parse(settings) case .Ok)
+		switch (parser.Parse(settings))
 		{
-			Generator gen = scope .();
-			gen.Generate(parser, settings);
+		case .Ok:
+			{
+				Generator gen = scope .();
+				gen.Generate(parser, settings);
+			}
+		case .Err:
+			{
+				Log.Error(scope $"Parsing failed");
+			}
 		}
+		
 	}
 
 	public static void Main()
@@ -31,7 +39,12 @@ class Program
 			settings.typeFilter = new (typename, kind, source) => {
 				return source.path.Contains("include");
 			};
-			settings.OutFilepath = "src/Test.bf";
+			settings.OutFilepath = "src/Generated/Test.bf";
+			settings.AddPreprocessorDefinition("GEN_TEST_DEFINED");
+			settings.AddPreprocessorDefinition("GEN_TEST_FORCEUNDEF");
+			settings.AddPreprocessorUndefine("GEN_TEST_FORCEUNDEF");
+			settings.LangStandard = "c23";
+
 			Generate(settings);
 		}
 		/*{

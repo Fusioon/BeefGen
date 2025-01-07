@@ -25,4 +25,16 @@
 #define CONST_FLOAT 243.23e2f
 #define CONST_DOUBLE 242.23e2
 
+#if GEN_TEST_DEFINED
+#define CONST_GLOBAL_DEF true
+#else
+#define CONST_GLOBAL_DEF false
+#endif
+
+#ifndef GEN_TEST_FORCEUNDEF
+#define CONST_GLOBAL_UNDEF true
+#else
+#define CONST_GLOBAL_UNDEF false
+#endif
+
 #endif // __TEST_H_

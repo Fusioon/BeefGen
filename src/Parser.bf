@@ -309,11 +309,31 @@ class Parser : IRawAllocator
 	{
 		_settings = settings;
 
-		List<char8*> argv = scope .(_settings._includeDirs.Count + _settings._commandLineArgs.Count);
-		
+		int GetArgsCount()
+		{
+			return 1 + _settings._includeDirs.Count + _settings._commandLineArgs.Count +
+					_settings._preprocDefines.Count + _settings._preprocUndefines.Count;
+		}
+
+		List<char8*> argv = scope .(GetArgsCount());
+
+		if (_settings.LangStandard.Length > 0)
+			argv.Add(new:this $"-std={_settings.LangStandard}");
+			
+
 		for (let includeDir in _settings._includeDirs)
 		{
 			argv.Add(new:this $"-I{includeDir}");
+		}
+
+		for (let def in _settings._preprocDefines)
+		{
+			argv.Add(new:this $"-D{def}");
+		}
+
+		for (let undef in _settings._preprocUndefines)
+		{
+			argv.Add(new:this $"-U{undef}");
 		}
 
 		for (let arg in _settings._commandLineArgs)
