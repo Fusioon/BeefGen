@@ -172,9 +172,9 @@ class Parser : IRawAllocator
 		public bool isFiltered;
 
 		public bool invalid;
-		public String resolvedType;
 
 		public bool IsFnLike => args != null;
+
 	}
 
 #endregion

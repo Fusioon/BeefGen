@@ -456,184 +456,6 @@ class Generator
 		}
 	}
 
-	Result<String> GetTypeAndValueFromMacro(Span<PreprocessorTokenizer.TokenData> tokens, String buffer)
-	{
-		String type = "";
-
-		PreprocessorTokenizer.TokenData prev = default;
-		for (let t in tokens)
-		{
-			switch (t.kind)
-			{
-			case .Questionmark, .Colon, .Stringify, .Concat, .Arg: return .Err;
-
-			case .LParent: buffer.Append('(');
-			case .RParent: buffer.Append(')');
-			case .Not: buffer.Append('!');
-			case .Plus:
-				{
-					if (prev.kind == .Literal || prev.kind == .LParent)
-						buffer.Append(" + ");
-					else
-						buffer.Append('+');
-				}
-			case .Minus:
-				{
-					if (prev.kind == .Literal || prev.kind == .LParent)
-						buffer.Append(" - ");
-					else
-						buffer.Append('-');
-				}
-			case .Mult: buffer.Append(" * ");
-			case .Div: buffer.Append(" / ");
-			case .Mod: buffer.Append(" % ");
-
-			case .BitOr: buffer.Append(" | ");
-			case .BitAnd: buffer.Append(" & ");
-			case .BitXor: buffer.Append(" ^ ");
-			case .BitNot: buffer.Append('~');
-			case .BitShiftLeft: buffer.Append(" << ");
-			case .BitShiftRight: buffer.Append(" >> ");
-
-			case .And: buffer.Append(" && "); type = nameof(bool);
-			case .Or: buffer.Append(" || "); type = nameof(bool);
-			case .CmpEQ: buffer.Append(" == "); type = nameof(bool);
-			case .CmpNotEQ: buffer.Append(" != "); type = nameof(bool);
-			case .CmpLess: buffer.Append(" < "); type = nameof(bool);
-			case .CmpLessEQ: buffer.Append(" <= "); type = nameof(bool);
-			case .CmpGreater: buffer.Append("  > "); type = nameof(bool);
-			case .CmpGreaterEQ: buffer.Append(" >= "); type = nameof(bool);
-
-			case .Literal:
-				{
-					switch (t.literal.kind)
-					{
-					case .Char:
-						{
-							bool HasEscapeSequence(char32 c)
-							{
-								switch(c)
-								{
-								case '\0','\a','\b','\f','\n','\r','\t','\v','\\','\'','\"':
-									return true;
-								default:
-									return false;
-								}
-							}	 
-
-							if (t.literal.charValue <= (.)0xFF && ((t.literal.flags & .Hex == .Hex) ||
-								(t.literal.charValue.IsControl && !HasEscapeSequence(t.literal.charValue))))
-							{
-								buffer.AppendF($"'\\x{((uint32)t.literal.charValue):x}'");
-							}
-							else if (t.literal.charValue < (.)0x80)
-							{
-								buffer.Append('\'');
-								switch (t.literal.charValue)
-								{
-								case 0: buffer.Append("\\0");
-								case '\a': buffer.Append("\\a");
-								case '\b': buffer.Append("\\b");
-								case '\f': buffer.Append("\\f");
-								case '\n': buffer.Append("\\n");
-								case '\r': buffer.Append("\\r");
-								case '\t': buffer.Append("\\t");
-								case '\v': buffer.Append("\\v");
-								case '\\': buffer.Append(@"\\");
-								case '\'': buffer.Append("\\'");
-								case '\"': buffer.Append("\\\"");
-								default: buffer.Append(_);
-								}
-								buffer.Append('\'');
-							}
-							else
-							{
-								buffer.AppendF($"'\\u{{{((uint32)t.literal.charValue):x}}}'");
-							}
-
-							switch (t.literal.type)
-							{
-							case .Char8:
-								type = nameof(char8);
-
-							case .Char16:
-								type = nameof(char16);
-
-							case .Char32:
-								type = nameof(char32);
-
-							case .CharWide:
-								type = nameof(c_wchar);
-
-							case .Int32, .Int64, .String8, .String16, .String32, .StringWide, .Undefined:
-								Runtime.FatalError();
-							}
-
-						}
-
-					case .Bool:
-						{
-							buffer.Append(t.literal.boolValue ? "true" : "false");
-							if (String.IsNullOrEmpty(type))
-								type = nameof(bool);
-						}
-					case .Int64:
-						{
-							if (t.literal.flags & .Hex == .Hex)
-							{
-								buffer.AppendF($"0x{t.literal.u64Value:x}");
-							}
-							else
-							{
-								buffer.Append(t.literal.u64Value);
-							}
-
-							if (String.IsNullOrEmpty(type))
-							{
-								if (t.literal.flags == .Unsigned)
-									type = nameof(uint64);
-								else
-									type = nameof(int64);
-							}
-						}
-					case .Float:
-						{
-							buffer.Append((float)t.literal.doubleValue);
-							buffer.Append('f');
-							if (String.IsNullOrEmpty(type))
-								type = nameof(float);
-						}
-					case .Double:
-						{
-							type = nameof(double);
-							buffer.Append(t.literal.doubleValue);
-						}
-					case .String:
-						{
-							if (prev.kind == .Literal && prev.literal.type.IsString)
-							{
-								buffer.Append(" + ");
-							}
-
-							type = nameof(String);
-							buffer.AppendF($"\"{t.literal.stringValue}\"");
-						}
-					case .Unknown:
-						Runtime.FatalError();
-					}
-				}
-
-			case .Identifier:
-				{
-					buffer.Append(t.identifier);
-				}
-			}
-			prev = t;
-		}
-
-		return type;
-	}
-
 	void GenerateType(Parser.TypeDef type, StreamWriter writer)
 	{
 		if (let structDef = type as Parser.StructTypeDef)
@@ -714,38 +536,18 @@ class Generator
 					_writer.WriteLine();
 			}
 
-			PreprocessorEvaluator evaluator = scope .(_parser);
+			PreprocessorEvaluator evaluator = scope PreprocessorEvaluator(_parser);
+			evaluator..EvalAll((macro) => {
+				return !macro.IsFnLike && !macro.isFiltered && !macro.invalid;
+			})..ForEach((macroEval) => {
 
-			String buffer = scope .(64);
-			for (let kv in parser.macros)
-			{
-				let (?, m) = kv;
-				if (m.invalid || m.args != null || m.isFiltered)
-					continue;
-
-				if (m.name == "WINAPI_FAMILY_WINRT")
-					NOP!();
-
-				if (evaluator.Evaluate(m.tokens) case .Ok)
-				{
-					switch (GetTypeAndValueFromMacro(evaluator.Tokens, buffer..Clear()))
-					{
-					case .Ok(let type):
-						{
-							if (buffer.Length > 0)
-							{
-								Runtime.Assert(!String.IsNullOrWhiteSpace(type));
-								WriteIndent();
-								_writer.WriteLine($"public const {type} {m.name} = {buffer};");
-							}
-						}
-					case .Err:
-						{
-							Log.Error(scope $"Failed to generate constant for macro '{m.name}'");
-						}
-					}
-				}
-			}
+				WriteIndent();
+				_writer.Write("public const ");
+				_writer.Write(macroEval.type.AsString);
+				_writer.Write(" ");
+				WriteIdentifier(macroEval.macro.name);
+				_writer.WriteLine($" = {macroEval.expanded};");
+			});
 		}
 
 		{
