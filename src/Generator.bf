@@ -73,19 +73,20 @@ class Generator
 
 	void WriteProtection(EProtectionKind prot)
 	{
+		var prot;
 		if (this.forceProtection != .Unspecified)
-		{
-			String protStr;
-			switch (prot)
-			{
-			case .Public: protStr = "public ";
-			case .Protected: protStr = "protected ";
-			case .Private: protStr = "private ";
-			case .Unspecified: protStr = " ";
-			}
+			prot = this.forceProtection;
 
-			_writer.Write(protStr);
-		}	 
+		String protStr;
+		switch (prot)
+		{
+		case .Public: protStr = "public ";
+		case .Protected: protStr = "protected ";
+		case .Private: protStr = "private ";
+		case .Unspecified: protStr = " ";
+		}
+
+		_writer.Write(protStr); 
 
 		if (this.forceUsing)
 			_writer.Write("using ");
