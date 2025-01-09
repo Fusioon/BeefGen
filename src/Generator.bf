@@ -456,16 +456,16 @@ class Generator
 		}
 	}
 
-	Result<String> GetTypeAndValueFromMacro(Parser.MacroDef macro, String buffer)
+	Result<String> GetTypeAndValueFromMacro(Span<PreprocessorTokenizer.TokenData> tokens, String buffer)
 	{
 		String type = "";
 
 		PreprocessorTokenizer.TokenData prev = default;
-		for (let t in macro.tokens)
+		for (let t in tokens)
 		{
 			switch (t.kind)
 			{
-			case .Questionmark, .Colon, .Stringify, .Concat: return .Err;
+			case .Questionmark, .Colon, .Stringify, .Concat, .Arg: return .Err;
 
 			case .LParent: buffer.Append('(');
 			case .RParent: buffer.Append(')');
@@ -610,6 +610,11 @@ class Generator
 						}
 					case .String:
 						{
+							if (prev.kind == .Literal && prev.literal.type.IsString)
+							{
+								buffer.Append(" + ");
+							}
+
 							type = nameof(String);
 							buffer.AppendF($"\"{t.literal.stringValue}\"");
 						}
@@ -620,29 +625,10 @@ class Generator
 
 			case .Identifier:
 				{
-					if (_parser.macros.TryGetValueAlt(t.identifier, let macroRef))
-					{
-						if (macroRef.invalid || macroRef.args != null)
-							return .Err;
-
-						switch (GetTypeAndValueFromMacro(macroRef, buffer))
-						{
-						case .Ok(let val):
-							{
-								if (String.IsNullOrEmpty(type))
-									type = val;
-							}
-						case .Err:
-							return .Err;
-						}
-					}
-					else
-					{
-						Log.Error(scope $"Unknown identifier {t.identifier} in macro {macro.name}");
-						return .Err;
-					}
+					buffer.Append(t.identifier);
 				}
 			}
+			prev = t;
 		}
 
 		return type;
@@ -678,7 +664,7 @@ class Generator
 		if (stream == null)
 		{
 			FileStream fs = scope:: .();
-			fs.Open(settings.OutFilepath, .Create, .Write);
+			fs.Open(settings.OutFilepath, .Create, .Write, .ReadWrite);
 			stream = fs;
 		}
 
@@ -690,10 +676,19 @@ class Generator
 		_writer.WriteLine($"namespace {settings.Namespace};");
 		_writer.WriteLine();
 
-		for (let kv in parser.aliasMap)
 		{
-			GenerateAliasFiltered(kv.value);
+			let startPos = stream.Position;
+			defer
+			{
+				if (startPos != stream.Position)
+					_writer.WriteLine();
+			}
+			for (let kv in parser.aliasMap)
+			{
+				GenerateAliasFiltered(kv.value);
+			}
 		}
+		
 
 		for (let e in parser.enums)
 		{
@@ -719,27 +714,35 @@ class Generator
 					_writer.WriteLine();
 			}
 
+			PreprocessorEvaluator evaluator = scope .(_parser);
+
 			String buffer = scope .(64);
 			for (let kv in parser.macros)
 			{
 				let (?, m) = kv;
-				if (m.invalid || m.args != null)
+				if (m.invalid || m.args != null || m.isFiltered)
 					continue;
 
-				switch (GetTypeAndValueFromMacro(m, buffer..Clear()))
+				if (m.name == "WINAPI_FAMILY_WINRT")
+					NOP!();
+
+				if (evaluator.Evaluate(m.tokens) case .Ok)
 				{
-				case .Ok(let type):
+					switch (GetTypeAndValueFromMacro(evaluator.Tokens, buffer..Clear()))
 					{
-						if (buffer.Length > 0)
+					case .Ok(let type):
 						{
-							Runtime.Assert(!String.IsNullOrWhiteSpace(type));
-							WriteIndent();
-							_writer.WriteLine($"public const {type} {m.name} = {buffer};");
+							if (buffer.Length > 0)
+							{
+								Runtime.Assert(!String.IsNullOrWhiteSpace(type));
+								WriteIndent();
+								_writer.WriteLine($"public const {type} {m.name} = {buffer};");
+							}
 						}
-					}
-				case .Err:
-					{
-						Log.Error(scope $"Failed to generate constant for macro '{m.name}'");
+					case .Err:
+						{
+							Log.Error(scope $"Failed to generate constant for macro '{m.name}'");
+						}
 					}
 				}
 			}

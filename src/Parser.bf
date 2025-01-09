@@ -169,8 +169,12 @@ class Parser : IRawAllocator
 		public append List<PreprocessorTokenizer.TokenData> tokens;
 		public append String value;
 
+		public bool isFiltered;
+
 		public bool invalid;
 		public String resolvedType;
+
+		public bool IsFnLike => args != null;
 	}
 
 #endregion
@@ -185,7 +189,7 @@ class Parser : IRawAllocator
 	public append List<GlobalVariableDecl> globalVars;
 	public append Dictionary<String, MacroDef> macros;
 
-	append PreprocessorTokenizer _preprocEvaluator;
+	append PreprocessorTokenizer _preprocTokenizer;
 
 	Settings _settings;
 	bool _ignoreWrites = false;
@@ -382,6 +386,7 @@ class Parser : IRawAllocator
 		}
 
 		let name = CursorSpelling(cursor, .. scope .());
+		bool isFiltered = false;
 		if (_settings.typeFilter != null)
 		{
 			CXFile file = ?;
@@ -397,9 +402,12 @@ class Parser : IRawAllocator
 
 			if (_settings.typeFilter(name, kind, .(inputFile, canonicalPath, line, column, offset)) == false)
 			{
-				return CXChildVisitResult.CXChildVisit_Continue;
+				isFiltered = true;
 			}
 		}
+
+		if (isFiltered && kind != .Macro)
+			return .CXChildVisit_Continue;
 
 		switch (kind)
 		{
@@ -408,11 +416,11 @@ class Parser : IRawAllocator
 			case .Struct:  return StructDecl(cursor, ?);
 			case .Enum: return EnumDecl(cursor, ?);
 			case .Variable: return VarDecl(cursor);
-			case .Macro: return MacroDecl(cursor);
+			case .Macro: return MacroDecl(cursor, isFiltered);
 		}
 	}
 
-	CXChildVisitResult MacroDecl(CXCursor cursor)
+	CXChildVisitResult MacroDecl(CXCursor cursor, bool isFiltered)
 	{
 		if (clang_Cursor_isMacroBuiltin(cursor) != 0)
 			return .CXChildVisit_Continue;
@@ -423,11 +431,21 @@ class Parser : IRawAllocator
 		uint32 tokenCount = 0;
 		clang_tokenize(unit, range, &tokens, &tokenCount);
 
-		let macroDef = new:this MacroDef();
-		CursorSpelling(cursor, macroDef.name);
-		if (!macros.TryAdd(macroDef.name, macroDef))
-			return .CXChildVisit_Continue;
 
+		String nameBuffer = scope .(64);
+		CursorSpelling(cursor, nameBuffer);
+		if (!macros.TryAdd(nameBuffer, let keyPtr, let valPtr))
+		{
+			Log.Warning(scope $"Macro '{nameBuffer}' redefinition (NotSupported)");
+			return .CXChildVisit_Continue;
+		}
+
+		let macroDef = new:this MacroDef();
+		macroDef.name.Set(nameBuffer);
+		*keyPtr = macroDef.name;
+		*valPtr = macroDef;
+
+		macroDef.isFiltered = isFiltered;
 		let fnLike = clang_Cursor_isMacroFunctionLike(cursor) != 0;
 		uint32 index = 1;
 
@@ -469,26 +487,32 @@ class Parser : IRawAllocator
 		}
 		clang_disposeTokens(unit, tokens, tokenCount);
 
-		if (!macroDef.invalid)
-		{
-			let source = scope PreprocessorTokenizer.SourceData(macroDef.value);
-			LOOP:
-			while (source.HasData)
-			{
-				switch (_preprocEvaluator.GetToken(source))
-				{
-				case .Ok(let val):
-					macroDef.tokens.Add(val);
-				case .Err:
-					{
-						Log.Error(scope $"Failed to tokenize macro '{macroDef.name}' = '{macroDef.value}'");
-						macroDef.invalid = true;
-						break LOOP;
-					}
-				}
-			}	
-		}
+		if (macroDef.name == "WINAPI_FAMILY_WINRT")
+			NOP!();
 
+		let source = scope PreprocessorTokenizer.SourceData(macroDef.value);
+		LOOP:
+		while (source.HasData)
+		{
+			switch (_preprocTokenizer.GetToken(source, (name) => {
+				if (macros.TryGetValueAlt(name, let macro))
+					return macro.IsFnLike;
+
+				return false;
+			}))
+			{
+			case .Ok(let val):
+				{
+					macroDef.tokens.Add(val);
+				}
+			case .Err:
+				{
+					Log.Error(scope $"Failed to tokenize macro '{macroDef.name}' = '{macroDef.value}'");
+					macroDef.invalid = true;
+					break LOOP;
+				}
+			}
+		}
 		return .CXChildVisit_Continue;
 	}
 

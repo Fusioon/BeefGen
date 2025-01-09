@@ -35,6 +35,7 @@ class PreprocessorTokenizer
 		BitNot,
 		Literal,
 		Identifier,
+		Arg
 	}
 
 	public enum ELiteralKind
@@ -50,7 +51,7 @@ class PreprocessorTokenizer
 
 	public enum ELiteralType
 	{
-		Undefined,
+		case Undefined,
 		Char8,
 		Char16,
 		Char32,
@@ -60,7 +61,31 @@ class PreprocessorTokenizer
 		String8,
 		String16,
 		String32,
-		StringWide
+		StringWide;
+
+		public bool IsChar
+		{
+			get
+			{
+				switch (this)
+				{
+				case .Char8, .Char16, .Char32, .CharWide: return true;
+				default: return false;
+				}
+			}
+		}
+
+		public bool IsString
+		{
+			get
+			{
+				switch (this)
+				{
+				case .String8, .String16, .String32, .StringWide: return true;
+				default: return false;
+				}
+			}
+		}
 	}
 
 	public struct LiteralInfo
@@ -141,14 +166,14 @@ class PreprocessorTokenizer
 	public struct TokenData
 	{
 		public ETokenKind kind;
+		
 		[Union]
-		struct Data
+		public using struct 
 		{
 			public StringView identifier;
+			public StringView arg;
 			public LiteralInfo literal;
-		}
-
-		public using Data _data;
+		} _data;
 
 		public this(ETokenKind k)
 		{
@@ -179,6 +204,12 @@ class PreprocessorTokenizer
 
 		public char8 prevChar;
 		public char8 currentChar;
+
+		public enum {
+			None = 0,
+			Indentifier,
+			Start
+		} asArgs = .None;
 
 		public this(StringView input)
 		{
@@ -630,7 +661,89 @@ class PreprocessorTokenizer
 		});
 	}
 
-	public Result<TokenData> GetToken(SourceData source)
+	Result<TokenData> ParseArg(SourceData source)
+	{
+		let start = source.position;
+
+		int32 nestDepth = 0;
+		while (source.HasData)
+		{
+			let c = source.currentChar;
+			if (c.IsWhiteSpace)
+			{
+				
+			}
+			else if (c == '(')
+			{
+				nestDepth++;
+			}
+			else if (c == ')')
+			{
+				if (nestDepth == 0)
+				{
+					source.asArgs = .None;
+					break;
+				}	
+
+				
+				nestDepth--;
+			}
+			else if (c == ',' && nestDepth == 0)
+			{
+				break;
+			}
+			source.NextChar();
+		}
+
+		if (start == source.position)
+		{
+			if (source.currentChar == ')')
+			{
+				source.NextChar();
+				return TokenData(.RParent);
+			}
+			else if (source.currentChar == ',')
+			{
+				source.NextChar();
+				return TokenData(.Arg) {  };
+			}
+
+			return .Err;
+		}
+
+		let length = source.position - start - 1;
+		if (source.asArgs != .None)
+			source.NextChar();
+
+		return TokenData(.Arg) { arg = source.input.Substring(start, length) };
+	}
+
+	public Result<TokenData> GetToken<FN>(SourceData source, FN isFNMacro) where FN : delegate bool(StringView name) 
+	{
+		let token = Try!(GetToken(source, source.asArgs == .Start));
+		if (isFNMacro != null && source.asArgs == .None && token.kind == .Identifier)
+		{
+			if (isFNMacro(token.identifier))
+				source.asArgs = .Indentifier;
+		}
+		else if (source.asArgs == .Indentifier)
+		{
+			if (token.kind == .LParent)
+			{
+				source.asArgs = .Start;
+			}
+			else
+				source.asArgs = .None;
+		}
+		else if (source.asArgs == .Start && token.kind != .Arg)
+		{
+			Runtime.FatalError();
+		}
+
+		return token;
+	}
+
+	Result<TokenData> GetToken(SourceData source, bool isArgs)
 	{
 		TokenData Advance(ETokenKind kind)
 		{
@@ -639,6 +752,9 @@ class PreprocessorTokenizer
 		}
 
 		SkipWhitespace(source);
+
+		if (isArgs)
+			return ParseArg(source);
 
 		char8 literalPrefix = 0;
 		int32 prefixLength = 0;
@@ -697,7 +813,7 @@ class PreprocessorTokenizer
 		case '&':
 			{
 				source.NextChar();
-				if (source.currentChar == '|')
+				if (source.currentChar == '&')
 					return Advance(.And);
 
 				return TokenData(.BitAnd);
@@ -769,7 +885,7 @@ class PreprocessorTokenizer
 
 			return TokenData(.Identifier, identifier);
 		}
-
+		
 		return .Err;
 	}
 }

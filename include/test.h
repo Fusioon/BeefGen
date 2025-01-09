@@ -37,4 +37,10 @@
 #define CONST_GLOBAL_UNDEF false
 #endif
 
+#define STR(x, ...) #x
+#define CONST_MACRO_STRINGIFY STR(""(123 + 123, +p),,,,,)
+
+#define BF_ULL(x) x ## ULL
+#define CONST_MACRO_EXPAND BF_ULL(55 + 55) 
+
 #endif // __TEST_H_
