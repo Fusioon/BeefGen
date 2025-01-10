@@ -68,7 +68,7 @@ class Parser : IRawAllocator
 		public class NameValuePair
 		{
 			public append String name;
-			public append String value;
+			public int64 value;
 		}	
 
 		public append List<NameValuePair> values;
@@ -755,11 +755,10 @@ class Parser : IRawAllocator
 			let tCursor = clang_getCursor(tu, loc);
 
 			if (tCursor.kind == .CXCursor_EnumConstantDecl) {
-				let val = clang_getEnumConstantDeclValue(tCursor);
 
 				let value = new:this EnumDef.NameValuePair();
 				CursorDisplayName(tCursor, value.name);
-				val.ToString(value.value);
+				value.value = clang_getEnumConstantDeclValue(tCursor);
 				def.values.Add(value);
 			}
 		}

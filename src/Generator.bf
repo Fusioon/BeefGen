@@ -125,14 +125,22 @@ class Generator
 
 	void WriteIdentifier(StringView name)
 	{
-		for (let kw in KEYWORDS)
+		if (name.Length > 0 && name[0].IsDigit)
 		{
-			if (kw == name)
+			_writer.Write("_");
+		}
+		else
+		{
+			for (let kw in KEYWORDS)
 			{
-				_writer.Write("@");
-				break;
+				if (kw == name)
+				{
+					_writer.Write("@");
+					break;
+				}
 			}
 		}
+		
 		_writer.Write(name);
 	}
 
@@ -180,15 +188,58 @@ class Generator
 	{
 		hasDupes = false;
 
-		HashSet<String> dups = scope .(e.values.Count);
+		HashSet<int64> dupes = scope .(e.values.Count);
 		for (let v in e.values)
 		{
-			if (v.value.Length > 0 && !dups.Add(v.value))
+			if (!dupes.Add(v.value))
 			{
 				hasDupes = true;
 				break;
 			}	
 		}
+
+		FIND_PREFIX:
+		do
+		{
+			if (_settings.enumGenerateFlags & .RemovePrefix != .RemovePrefix)
+				break FIND_PREFIX;
+
+			if (e.values.Count < 2)
+				break FIND_PREFIX;
+
+			int shortestLength = int.MaxValue;
+			StringView name = default;
+
+			for (let v in e.values)
+			{
+				if (v.name.Length < shortestLength)
+				{
+					shortestLength = v.name.Length;
+					name = v.name;
+				}
+			}
+
+			if (shortestLength == int.MaxValue)
+				break FIND_PREFIX;
+
+			while (name.Length > 0)
+			{
+				CHECK_PREFIX:
+				do
+				{
+					for (let v in e.values)
+					{
+						if (!v.name.StartsWith(name))
+							break CHECK_PREFIX;
+					}
+					prefix.Set(name);
+					break FIND_PREFIX;
+				}
+				
+				name.RemoveFromEnd(1);
+			}
+		}
+		
 
 		return .Ok;
 	}
@@ -220,16 +271,20 @@ class Generator
 		_writer.WriteLine("{");
 
 		PushIndent();
+
+		int64 next = 0;
+		String tmp = scope .(32);
 		for (let v in e.values)
 		{
 			WriteIndent();
-			WriteIdentifier(v.name);
-			if (v.value.Length > 0)
+			WriteIdentifier(v.name.Substring(valueNamePrefix.Length));
+			if ((_settings.enumGenerateFlags & .OmitImplicitValues != .OmitImplicitValues) || next != v.value)
 			{
 				_writer.Write(" = ");
-				_writer.Write(v.value);
+				_writer.Write(v.value.ToString(.. tmp..Clear()));
 			}
 			_writer.WriteLine(",");
+			next = v.value + 1;
 		}
 		PopIndent();
 

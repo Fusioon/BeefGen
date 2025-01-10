@@ -19,10 +19,11 @@ enum EDeclKind
 enum EEnumGenerateFlags
 {
 	None = 0x00,
+	OmitImplicitValues = 0x01,
 	// Automatically detects common value name prefix and removes it
-	RemovePrefix = 0x01,
+	RemovePrefix = 0x02,
 	// Transform uppercase / underscore (_) value names into capitalized versions
-	TransformCase = 0x02
+	//TransformCase = 0x04
 }
 
 public class Settings
@@ -72,6 +73,7 @@ public class Settings
 		set => _langStd.Set(value);
 	}
 
+	public EEnumGenerateFlags enumGenerateFlags = .OmitImplicitValues;
 	// Generate int structs instead of opaque type pointers
 	public bool intHandles = true;
 }
