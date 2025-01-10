@@ -16,6 +16,14 @@ enum EDeclKind
 	Macro
 }
 
+enum EEnumGenerateFlags
+{
+	None = 0x00,
+	// Automatically detects common value name prefix and removes it
+	RemovePrefix = 0x01,
+	// Transform uppercase / underscore (_) value names into capitalized versions
+	TransformCase = 0x02
+}
 
 public class Settings
 {
@@ -64,6 +72,6 @@ public class Settings
 		set => _langStd.Set(value);
 	}
 
-	// Use int structs instead of opaque type pointers
+	// Generate int structs instead of opaque type pointers
 	public bool intHandles = true;
 }

@@ -445,7 +445,7 @@ class Generator
 					if (_settings.intHandles)
 					{
 						_handleTypes.Add(type.name);
-						_writer.WriteLine($"struct {def.name} : int;");
+						_writer.WriteLine($"struct {def.name} : int {{ }}");
 					}
 					else
 					{
