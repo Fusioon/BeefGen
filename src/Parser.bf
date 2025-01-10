@@ -82,7 +82,7 @@ class Parser : IRawAllocator
 		//public TypeRef next;
 		public bool isConst;
 		public bool isRef;
-		public int ptrDepth;
+		public int32 ptrDepth;
 
 		public List<int64> sizedArray;
 

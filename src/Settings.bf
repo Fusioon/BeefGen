@@ -17,7 +17,6 @@ enum EDeclKind
 }
 
 
-
 public class Settings
 {
 	public delegate bool TypeFilterDelegate(StringView typename, EDeclKind kind, SourceInfo source);
@@ -65,4 +64,6 @@ public class Settings
 		set => _langStd.Set(value);
 	}
 
+	// Use int structs instead of opaque type pointers
+	public bool intHandles = true;
 }

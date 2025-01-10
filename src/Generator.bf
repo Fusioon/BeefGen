@@ -20,7 +20,7 @@ class Generator
 	const String INDENT_STR = "\t";
 	append String _indent;
 
-	String[?] KEYWORDS = .("internal", "function", "delegate", "where",
+	const String[?] KEYWORDS = .("internal", "function", "delegate", "where",
 							"operator", "class", "struct", "extern",
 							"for", "while", "do", "repeat", "abstract",
 							"base", "virtual", "override", "extension",
@@ -29,6 +29,8 @@ class Generator
 	Parser _parser;
 	Settings _settings;
 	StreamWriter _writer;
+
+	append HashSet<String> _handleTypes;
 
 	bool skipNames = false;
 	bool skipEndl = false;
@@ -166,7 +168,11 @@ class Generator
 				_writer.Write($"[{dimm}]");
 		}
 
-		for (int32 _ in 0..<type.ptrDepth)
+		int32 ptr = type.ptrDepth;
+		if (_handleTypes.Contains(type.typeString))
+			ptr--;
+
+		for (int32 _ in 0..<ptr)
 			_writer.Write("*");
 	}
 
@@ -435,7 +441,17 @@ class Generator
 			if (def.name == def.alias.typeString)
 			{
 				if (!exists || (type is Parser.TypeAliasDef))
-					_writer.WriteLine($"struct {def.name};");
+				{
+					if (_settings.intHandles)
+					{
+						_handleTypes.Add(type.name);
+						_writer.WriteLine($"struct {def.name} : int;");
+					}
+					else
+					{
+						_writer.WriteLine($"struct {def.name};");
+					}
+				}
 			}
 			else
 			{
