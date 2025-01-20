@@ -24,7 +24,8 @@ class Generator
 							"operator", "class", "struct", "extern",
 							"for", "while", "do", "repeat", "abstract",
 							"base", "virtual", "override", "extension",
-							"namespace", "using", "out", "in", "ref");
+							"namespace", "using", "out", "in", "ref",
+							"checked");
 
 	Parser _parser;
 	Settings _settings;
