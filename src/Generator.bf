@@ -15,8 +15,6 @@ class Generator
 		Public,
 	}
 
-
-
 	const String INDENT_STR = "\t";
 	append String _indent;
 
@@ -163,6 +161,9 @@ class Generator
 			if (let fnDecl = type.typeDef as Parser.FunctionTypeDef)
 			{
 				GenerateFunction(fnDecl, true);
+				int32 ptr = type.ptrDepth - 1;
+				for (int32 _ in 0..<ptr)
+					_writer.Write("*");
 				return;
 			}
 			else

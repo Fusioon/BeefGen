@@ -879,9 +879,9 @@ class PreprocessorTokenizer
 			StringView identifier = source.input.Substring(start, source.position - start);
 
 			if (identifier == "true")
-				return TokenData(.Literal, .(true));
+				return TokenData(.Literal, LiteralInfo(true));
 			if (identifier == "false")
-				return TokenData(.Literal, .(false));
+				return TokenData(.Literal, LiteralInfo(false));
 
 			return TokenData(.Identifier, identifier);
 		}

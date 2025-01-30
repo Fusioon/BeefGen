@@ -584,10 +584,13 @@ class Parser : IRawAllocator
 
 		for (let i < numArgs)
 		{
+			let argCursor = clang_Cursor_getArgument(cursor, (.)i);
+			Runtime.Assert(argCursor.kind != .CXCursor_FirstInvalid);
 			let argType = clang_getArgType(functionType, (.)i);
 			let arg = new:this VariableDecl();
 			arg.name.Set(argNames[i]);
-			GetTypeRef(argType, arg.type, false, ?, cursor);
+			
+			GetTypeRef(argType, arg.type, false, ?, argCursor);
 			functionDef.args.Add(arg);
 		}
 
@@ -672,6 +675,15 @@ class Parser : IRawAllocator
 						}
 					default: Runtime.FatalError();
 					}
+					if (type == null)
+					{
+						String tmp = scope .();
+						CursorSpelling(fieldCursor, tmp);
+						Log.Error(scope $"Failed to parse inner type {tmp}.");
+						break;
+					}
+
+
 					typedef.innerTypes ??= new:this List<Parser.StructTypeDef.InnerType>();
 					StructTypeDef.EInnerTypeFlags flags = 0;
 					if (type.name.Contains("anonymous"))
@@ -885,17 +897,19 @@ class Parser : IRawAllocator
 				
 				let numArgs = clang_getNumArgTypes(realType);
 
-				List<String> argNames = scope .();
+				List<String> argNames = scope .()..Reserve(numArgs);
+				List<CXCursor> argCursors = scope .()..Reserve(numArgs);
 
 				if (numArgs > 0)
 				{
-					(Self _this, List<String> argNames) ctx = (this, argNames);
+					(Self _this, List<String> argNames, List<CXCursor> argCursors) ctx = (this, argNames, argCursors);
 					clang_visitChildren(cursor, (cursor, parent, client_data) => {
-						(Self _this, List<String> argNames) = *(.)client_data;
+						(Self _this, List<String> argNames, List<CXCursor> argCursors) = *(.)client_data;
 						if (cursor.kind == .CXCursor_ParamDecl)
 						{
 							let name = CursorSpelling(cursor, .. new:_this String());
 							argNames.Add(name);
+							argCursors.Add(cursor);
 						}
 						return .CXChildVisit_Continue;
 					}, &ctx);
@@ -905,11 +919,11 @@ class Parser : IRawAllocator
 
 				for (let i < numArgs)
 				{
-					let argCursor = clang_Cursor_getArgument(cursor, (.)i);
+					//let argCursor = clang_Cursor_getArgument(cursor, (.)i);
 					let argType = clang_getArgType(realType, (.)i);
 					let arg = new:this VariableDecl();
 					arg.name.Set(argNames[i]);
-					GetTypeRef(argType, arg.type, false, ?, argCursor);
+					GetTypeRef(argType, arg.type, false, ?, argCursors[i]);
 					functionDef.args.Add(arg);
 				}
 			}
