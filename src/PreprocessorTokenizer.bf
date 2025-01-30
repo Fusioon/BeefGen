@@ -314,7 +314,7 @@ class PreprocessorTokenizer
 
 			when (_ >= '0' && _ <= '8'):
 				{
-					flags = .Octal;
+					
 					while (source.HasData)
 					{
 						let c = source.currentChar;
@@ -324,7 +324,10 @@ class PreprocessorTokenizer
 							value += (.)(c - '0');
 						}
 						else
+						{
+							flags = .Octal;
 							break BASE_SELECT;
+						}
 
 						source.NextChar();
 					}

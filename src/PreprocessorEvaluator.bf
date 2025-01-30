@@ -703,9 +703,6 @@ class PreprocessorEvaluator
 			if (_evalDict.TryGetValue(macro, let eval))
 				continue;
 
-			if (macro.name == "CONST_INT_WITH_REF")
-				NOP!();
-
 			switch (Evaluate(macro.tokens))
 			{
 				case .Ok(let evalType):
