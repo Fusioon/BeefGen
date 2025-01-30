@@ -342,7 +342,12 @@ class PreprocessorEvaluator
 						{
 							if (t.literal.flags & .Hex == .Hex)
 							{
-								buffer.AppendF($"0x{t.literal.u64Value:x}");
+								String prefix = "";
+								if ((t.literal.u64Value >= 0x01000000 && t.literal.u64Value <= 0x0F000000) ||
+									(t.literal.u64Value >= 0x0100000000 && t.literal.u64Value <= 0x0F00000000))
+									prefix = "0";
+
+								buffer.AppendF($"0x{prefix}{t.literal.u64Value:x}");
 							}
 							else if (t.literal.flags & .Octal == .Octal)
 							{
