@@ -122,6 +122,17 @@ class Generator
 		}
 	}
 
+	void WriteIdentifier(StringView name, String buffer)
+	{
+		StringStream ss = scope .(buffer, .Reference);
+		ss.Position = buffer.Length;
+		StreamWriter writer = scope .(ss, System.Text.Encoding.UTF8, 64);
+		using(SetRestore<StreamWriter>(ref _writer, writer))
+		{
+			WriteIdentifier(name);
+		}
+	}
+
 	void WriteIdentifier(StringView name)
 	{
 		if (name.Length > 0 && name[0].IsDigit)
@@ -142,6 +153,7 @@ class Generator
 		
 		_writer.Write(name);
 	}
+
 
 	void WriteBeefType(Parser.TypeRef type, String buffer)
 	{
@@ -295,6 +307,43 @@ class Generator
 
 	}
 
+	int WriteBitfield(Span<Parser.VariableDecl> fields)
+	{
+		int32 prevSize = fields[0].type.size;
+		int32 bits = prevSize * 8;
+
+		String attr = scope .(64);
+
+		int i;
+		for (i = 0; i < fields.Length; i++)
+		{
+			let f = fields[i];
+
+			if (f.type.bitWidth == -1)
+				break;
+
+			if (f.type.size != prevSize)
+				break;
+
+			bits -= f.type.bitWidth;
+			if (bits < 0)
+			{
+				break;
+			}
+
+			attr..Clear()..AppendF($"Bitfield(.Public, .Bits({f.type.bitWidth}), \"");
+			WriteIdentifier(f.name, attr);
+			attr.Append("\")");
+
+			WriteAttrs(Span<String>(&attr, 1), false);
+
+			if (bits == 0)
+				break;	
+		}
+
+		return Math.Max(i - 1, 0);
+	}
+
 	void GenerateStruct(Parser.StructTypeDef s)
 	{
 		Runtime.Assert(s.tag == .Union || s.tag == .Struct);
@@ -367,8 +416,16 @@ class Generator
 			}
 			else
 			{
+				EProtectionKind protection = .Public;
+				if (f.type.bitWidth > 0)
+				{
+					protection = .Private;
+					i += WriteBitfield(s.fields.GetRange(i));
+					f.name..Clear()..AppendF($"__bitfield_{i}__");
+				}
+
 				WriteIndent();
-				WriteProtection(.Public);
+				WriteProtection(protection);
 				WriteBeefType(f.type);
 			}
 

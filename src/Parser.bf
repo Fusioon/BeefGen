@@ -83,6 +83,8 @@ class Parser : IRawAllocator
 		public bool isConst;
 		public bool isRef;
 		public int32 ptrDepth;
+		public int32 bitWidth;
+		public int32 size;
 
 		public List<int64> sizedArray;
 
@@ -648,6 +650,12 @@ class Parser : IRawAllocator
 					top.flags |= .Field;
 				}
 
+				fieldDecl.type.bitWidth = -1;
+				if (clang_Cursor_isBitField(fieldCursor) != 0)
+				{
+					fieldDecl.type.bitWidth = clang_getFieldDeclBitWidth(fieldCursor);
+				}
+
 				typedef.fields.Add(fieldDecl);
 			}
 
@@ -714,7 +722,6 @@ class Parser : IRawAllocator
 		CursorSpelling(cursor, typedef.name);
 
 		AddType(typedef);
-
 
 		CXType type = clang_getCursorType(cursor);
 		CXCursor declCursor = clang_getTypeDeclaration(type);
@@ -809,6 +816,7 @@ class Parser : IRawAllocator
 
 		mixin SetPrimitive(String name)
 		{
+			result.size = (.)clang_Type_getSizeOf(canonicalType);
 			result.typeString.Set(name);
 			aliasFlags |= .Primitive;
 		}

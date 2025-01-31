@@ -53,6 +53,20 @@ typedef struct context {
 	void* userdata;
 } context;
 
+typedef struct BitfieldsAreFun
+{
+	short a : 4;
+	short b : 4;
+
+	int x : 8;
+	int y : 8;
+	int z : 8;
+
+	int w : 16;
+	int v : 32;
+} BitfieldsAreFun;
+
+
 typedef enum qvtab {
 	TAB_NONE,
 	TAB_ONE,
