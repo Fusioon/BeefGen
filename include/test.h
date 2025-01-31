@@ -48,5 +48,30 @@
 #define BF_ULL(x) x ## ULL
 #define CONST_MACRO_EXPAND BF_ULL(55 + 55) 
 
+typedef struct context {
+	int handle;
+	void* userdata;
+} context;
+
+typedef enum qvtab {
+	TAB_NONE,
+	TAB_ONE,
+	TAB_TWO,
+	TAB_APPLE,
+	TAB_TREE
+} qvtab;
+
+typedef struct qvalue qvalue;
+
+struct module
+{
+	int (*xFindFunction)(qvtab *pVtab, int nArg, const char *zName,
+		void (**pxFunc)(context*,int,qvalue**),
+		void **ppArg);
+};
+
+__declspec(dllimport) int xFindFunction_Test(qvtab *pVtab, int nArg, const char *zName,
+		void (**pxFunc)(context* ctx,int v,qvalue**),
+		void **ppArg);
 
 #endif // __TEST_H_
