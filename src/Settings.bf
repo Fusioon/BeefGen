@@ -19,10 +19,11 @@ enum EDeclKind
 enum EEnumGenerateFlags
 {
 	None = 0x00,
+	/// Skips assignment of enum values which are implicitly known (incremented by one from previous value)
 	OmitImplicitValues = 0x01,
-	// Automatically detects common value name prefix and removes it
+	/// Automatically detects common value name prefix and removes it
 	RemovePrefix = 0x02,
-	// Transform uppercase / underscore (_) value names into capitalized versions
+	/// Transform uppercase / underscore (_) value names into capitalized versions
 	//TransformCase = 0x04
 }
 
@@ -43,16 +44,22 @@ public class Settings
 
 	public TypeFilterDelegate typeFilter ~ delete _;
 
+	// Add directory to include search path
 	public void AddIncludeDir(StringView path) => _includeDirs.Add(new .(path));
 	public void AddIncludeDirF(StringView format, params Span<Object> args) => _includeDirs.Add(new String()..AppendF(format, params args));
 
+	// Add file to generate bindings from
 	public void AddInputFile(StringView path) => _inputFiles.Add(new .(path));
 	public void AddInputFileF(StringView format, params Span<Object> args) => _inputFiles.Add(new String()..AppendF(format, params args));
 
+	// Add custom command line options when invoking clang
 	public void AddCommandLineArg(StringView arg) => _commandLineArgs.Add(new .(arg));
 	public void AddCommandLineArgF(StringView format, params Span<Object> args) => _commandLineArgs.Add(new String()..AppendF(format, params args));
 
+	// Define macro
 	public void AddPreprocessorDefinition(StringView def) => _preprocDefines.Add(new .(def));
+
+	// Undefine macro
 	public void AddPreprocessorUndefine(StringView undef) => _preprocUndefines.Add(new .(undef));
 
 	public StringView Namespace

@@ -32,56 +32,27 @@ class Program
 		let dir = Directory.GetCurrentDirectory(.. scope .());
 
 		{
-			Settings settings = scope .();
-			settings.Namespace = "Test";
-			settings.AddInputFileF($"{dir}/include/test.h");
-			settings.AddIncludeDirF($"{dir}/include");
-			settings.typeFilter = new (typename, kind, source) => {
-				return source.path.Contains("include");
+			Settings settings = scope .()
+			{
+				LangStandard = "c23", // Which language standard to use (c2y, c23, c17, c11, c99, c89)
+				Namespace = "Test", // Name of the namespace in the generated beef file
+				typeFilter = new (typename, kind, source) => {
+					// return value indicates if the type/function/constant should be present in the generated beef file
+				  	return source.path.Contains("include");
+				},
+				OutFilepath = "src/Generated/Test.bf", // Name of the output file
+				outStream = null, // or you can use stream
+
+				intHandles = true, // Generate int structs `struct ExampleIntStruct : int {}` instead of opaque type pointers `struct ExampleOpaque;`
+				enumGenerateFlags = .RemovePrefix | .OmitImplicitValues
 			};
-			settings.OutFilepath = "src/Generated/Test.bf";
+			settings.AddInputFileF($"{dir}/include/test.h"); // Add file to generate binding from
+			settings.AddIncludeDirF($"{dir}/include"); // Add directory to include search path
+			
 			settings.AddPreprocessorDefinition("GEN_TEST_DEFINED");
 			settings.AddPreprocessorDefinition("GEN_TEST_FORCEUNDEF");
 			settings.AddPreprocessorUndefine("GEN_TEST_FORCEUNDEF");
-			settings.LangStandard = "c23";
-
 			Generate(settings);
 		}
-		/*{
-			Settings settings = scope .();
-			settings.Namespace = "Sodium";
-			settings.AddInputFileF($"{dir}/include/SODIUM_include/sodium.h");
-			settings.AddIncludeDirF($"{dir}/include/SODIUM_include");
-			settings.typeFilter = new (typename, kind, source) => {
-				return source.path.Contains("include/SODIUM_include");
-			};
-			settings.OutFilepath = "src/Sodium.bf";
-			Generate(settings);
-		}
-
-		{
-			Settings settings = scope .();
-			settings.Namespace = "SDL3";
-			settings.AddInputFileF($"{dir}/include/SDL_include/SDL3/SDL.h");
-			settings.AddIncludeDirF($"{dir}/include/SDL_include");
-			settings.typeFilter = new (typename, kind, source) => {
-				return source.path.Contains("include/SDL_include");
-			};
-			settings.OutFilepath = "src/SDL3.bf";
-			Generate(settings);
-		}
-
-		{
-			Settings settings = scope .();
-			settings.Namespace = "Box2D";
-			settings.AddInputFileF($"{dir}/include/BOX2D_include/box2d/box2d.h");
-			settings.AddIncludeDirF($"{dir}/include/BOX2D_include");
-			settings.typeFilter = new (typename, kind, source) => {
-				return source.path.Contains("include/BOX2D_include");
-			};
-			settings.OutFilepath = "src/Box2D.bf";
-			Generate(settings);
-		}*/
-
 	}
 }
