@@ -559,6 +559,15 @@ class Generator
 		Stream stream = settings.outStream;
 		if (stream == null)
 		{
+			Runtime.Assert(settings.OutFilepath.Length > 0);
+			let directoryPath = scope String();
+			if (Path.GetDirectoryPath(settings.OutFilepath, directoryPath) case .Ok)
+			{
+				if (Directory.CreateDirectory(directoryPath) case .Err(let err) && err != .AlreadyExists)
+					Log.Error(scope $"Failed to create output directory '{directoryPath}' ({err})");
+			}
+
+
 			FileStream fs = scope:: .();
 			fs.Open(settings.OutFilepath, .Create, .Write, .ReadWrite);
 			stream = fs;
