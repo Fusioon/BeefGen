@@ -497,8 +497,11 @@ class Generator
 				_writer.Write(", ");
 
 			WriteBeefType(a.type);
-			_writer.Write(" ");
-			WriteIdentifier(a.name);
+			if (a.name.Length > 0)
+			{
+				_writer.Write(" ");
+				WriteIdentifier(a.name);
+			}
 		}
 
 		if (f.isVarArg)
