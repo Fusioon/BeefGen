@@ -664,21 +664,25 @@ class Parser : IRawAllocator
 				using (SetRestore<bool>(ref _ignoreWrites, true))
 				{
 					TypeDef type;
+					EDeclKind declKind;
 					switch (_)
 					{
 					case .CXCursor_StructDecl, .CXCursor_UnionDecl:
 						{
 							StructDecl(fieldCursor, let structType);
+							declKind = .Struct;
 							type = structType;
 						}
 					case .CXCursor_EnumDecl:
 						{
 							EnumDecl(fieldCursor, let enumType);
+							declKind = .Enum;
 							type = enumType;
 						}
 					case .CXCursor_TypedefDecl:
 						{
 							TypedefDecl(fieldCursor, let typedefDef);
+							declKind = .Typedef;
 							type = typedefDef;
 						}
 					default: Runtime.FatalError();
@@ -687,7 +691,7 @@ class Parser : IRawAllocator
 					{
 						String tmp = scope .();
 						CursorSpelling(fieldCursor, tmp);
-						Log.Error(scope $"Failed to parse inner type {tmp}.");
+						Log.Error(scope $"Failed to parse inner {declKind} type '{tmp}' in '{typedef.name}'.");
 						break;
 					}
 
@@ -746,6 +750,12 @@ class Parser : IRawAllocator
 
 	CXChildVisitResult EnumDecl(CXCursor cursor, out EnumDef def)
 	{
+		if (clang_isCursorDefinition(cursor) == 0)
+		{
+			def = null;
+			return .CXChildVisit_Continue;
+		}
+
 		let tu = clang_Cursor_getTranslationUnit(cursor);
 		let range = clang_getCursorReferenceNameRange(cursor, .CXNameRange_WantSinglePiece, 0);
 
