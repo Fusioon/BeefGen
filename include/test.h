@@ -51,6 +51,18 @@
 typedef struct context {
 	int handle;
 	void* userdata;
+
+	struct {
+		int major, minor;
+	} version;
+	int i;
+	struct {
+		int x, y;
+	} pos;
+	struct {
+		unsigned char r, g, b, a;
+	} color;
+
 } context;
 
 typedef struct BitfieldsAreFun

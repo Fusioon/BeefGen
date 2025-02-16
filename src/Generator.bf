@@ -437,7 +437,10 @@ class Generator
 				for (j = i + 1; j < count; ++j)
 				{
 					if (s.fields[j].typedef != f.typedef)
+					{
+						j--;
 						break;
+					}
 
 					_writer.Write(", ");
 					WriteIdentifier(f.name);
