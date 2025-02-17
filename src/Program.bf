@@ -7,7 +7,7 @@ namespace BeefGen;
 
 class Program
 {
-	static void Generate(Settings settings)
+	static void Generate(Settings settings, String CallerPath = Compiler.CallerFilePath, String CallerName = Compiler.CallerMemberName, int CallerLine = Compiler.CallerLineNum)
 	{
 		Parser parser = scope .();
 		switch (parser.Parse(settings))
@@ -19,7 +19,7 @@ class Program
 			}
 		case .Err:
 			{
-				Log.Error(scope $"Parsing failed");
+				Log.Error(scope $"Parsing failed", CallerPath, CallerName, CallerLine);
 			}
 		}
 		

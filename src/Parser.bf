@@ -349,9 +349,13 @@ class Parser : IRawAllocator
 		for (let inputFile in _settings._inputFiles)
 		{
 			let index = clang_createIndex(0, 0);
-			let unit = clang_parseTranslationUnit(index, inputFile, argv.Ptr, (.)argv.Count, null, 0, .CXTranslationUnit_DetailedPreprocessingRecord);
-
-			//let unit = clang_createTranslationUnitFromSourceFile(index, inputFile, (.)argv.Count, argv.Ptr, 0, null);
+			let code = clang_parseTranslationUnit2(index, inputFile, argv.Ptr, (.)argv.Count, null, 0, .CXTranslationUnit_DetailedPreprocessingRecord, let unit);
+			if (unit == 0)
+			{
+				Log.Error(scope $"Failed to parse '{inputFile}' ({code})");
+				hadFatalErr = true;
+				continue;
+			}
 			let cursor = clang_getTranslationUnitCursor(unit);
 
 			PrintDiagnostics(unit, let fatalErr);

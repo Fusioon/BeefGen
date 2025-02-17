@@ -946,7 +946,7 @@ static {
      * \returns Zero on success, otherwise returns an error code.
      */
     [CLink]
-    public static extern CXErrorCode clang_parseTranslationUnit2(CXIndex CIdx, c_char * source_filename, c_char * *command_line_args, c_int num_command_line_args, CXUnsavedFile * unsaved_files, c_uint num_unsaved_files, c_uint options, out CXTranslationUnit* out_TU);
+    public static extern CXErrorCode clang_parseTranslationUnit2(CXIndex CIdx, c_char * source_filename, c_char * *command_line_args, c_int num_command_line_args, CXUnsavedFile * unsaved_files, c_uint num_unsaved_files, CXTranslationUnit_Flags options, out CXTranslationUnit out_TU);
 
     /**
      * Same as clang_parseTranslationUnit2 but requires a full command line
