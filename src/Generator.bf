@@ -168,21 +168,21 @@ class Generator
 
 	void WriteBeefType(Parser.TypeRef type)
 	{
+		int32 ptr = type.ptrDepth;
+
 		if (type.typeString.IsEmpty)
 		{
 			if (let fnDecl = type.typeDef as Parser.FunctionTypeDef)
 			{
 				GenerateFunction(fnDecl, true);
-				int32 ptr = type.ptrDepth - 1;
-				for (int32 _ in 0..<ptr)
-					_writer.Write("*");
-				return;
 			}
 			else
 				Runtime.FatalError();
 		}
-
-		_writer.Write(type.typeString);
+		else
+		{
+			_writer.Write(type.typeString);
+		}
 
 		if (type.sizedArray != null)
 		{
@@ -190,11 +190,11 @@ class Generator
 				_writer.Write($"[{dimm}]");
 		}
 
-		int32 ptr = type.ptrDepth;
 		if (_handleTypes.Contains(type.typeString))
 			ptr--;
 
-		for (int32 _ in 0..<ptr)
+		Runtime.Assert(ptr >= 0);
+		for (int32 _ < ptr)
 			_writer.Write("*");
 	}
 

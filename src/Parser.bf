@@ -350,7 +350,7 @@ class Parser : IRawAllocator
 		{
 			let index = clang_createIndex(0, 0);
 			let unit = clang_parseTranslationUnit(index, inputFile, argv.Ptr, (.)argv.Count, null, 0, .CXTranslationUnit_DetailedPreprocessingRecord);
-			
+
 			//let unit = clang_createTranslationUnitFromSourceFile(index, inputFile, (.)argv.Count, argv.Ptr, 0, null);
 			let cursor = clang_getTranslationUnitCursor(unit);
 
@@ -591,11 +591,10 @@ class Parser : IRawAllocator
 			let argType = clang_getArgType(functionType, (.)i);
 			let arg = new:this VariableDecl();
 			arg.name.Set(argNames[i]);
-			
+
 			GetTypeRef(argType, arg.type, false, ?, argCursor);
 			functionDef.args.Add(arg);
 		}
-
 
 		return .CXChildVisit_Continue;
 	}
@@ -878,7 +877,8 @@ class Parser : IRawAllocator
 					result.sizedArray.Add(size);
 				}
 				while (t.kind == .CXType_ConstantArray);
-				(?, let flags) = GetTypeRef(t, result, true, ?);
+				(?, let flags) = GetTypeRef(t, result, true, let ptrs, cursor);
+				result.ptrDepth += ptrs;
 				aliasFlags |= flags;
 			}
 			case .CXType_IncompleteArray:
@@ -890,6 +890,8 @@ class Parser : IRawAllocator
 			}
 			case .CXType_FunctionProto:
 			{
+				result.ptrDepth--;
+
 				if (realType.kind == .CXType_Elaborated)
 				{
 					String buffer = scope .();

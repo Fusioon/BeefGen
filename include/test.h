@@ -89,12 +89,25 @@ typedef enum qvtab {
 
 typedef struct qvalue qvalue;
 
+typedef void Client_connectionLost(void* context, char* cause);
+
 struct module
 {
 	int (*xFindFunction)(qvtab *pVtab, int nArg, const char *zName,
 		void (**pxFunc)(context*,int,qvalue**),
 		void **ppArg);
+
+	
+	Client_connectionLost* connLost;
+
+	int (*func_ptr)(int x, int y);
+
+	int (*operations[2])(int x, int y);
+
+	Client_connectionLost* (*getCallback)(void*);
 };
+
+
 
 __declspec(dllimport) int xFindFunction_Test(qvtab *pVtab, int nArg, const char *zName,
 		void (**pxFunc)(context* ctx,int v,qvalue**),
