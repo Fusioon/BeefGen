@@ -845,8 +845,15 @@ class Parser : IRawAllocator
 			case .CXType_UInt: SetPrimitive!(nameof(c_uint));
 			case .CXType_Bool: SetPrimitive!(nameof(c_bool));
 			case .CXType_Void: SetPrimitive!(nameof(void));
-			case .CXType_Char_S, .CXType_SChar:	SetPrimitive!(nameof(c_char));
-			case .CXType_UChar, .CXType_Char_U: SetPrimitive!(nameof(c_uchar));
+
+			// Handle char types with explicitly set signedness
+			case .CXType_SChar: SetPrimitive!(nameof(int8));
+			case .CXType_UChar: SetPrimitive!(nameof(uint8));
+
+			case .CXType_Char_S: SetPrimitive!(nameof(c_char));
+			case .CXType_Char_U: SetPrimitive!(nameof(c_char));
+			case .CXType_Char16: SetPrimitive!(nameof(char16));
+			case .CXType_Char32: SetPrimitive!(nameof(char32));
 			case .CXType_Record, .CXType_Enum:
 			{
 				var unqalType = clang_getUnqualifiedType(canonicalType);
