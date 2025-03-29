@@ -46,11 +46,22 @@
 #define CONST_MACRO_STRINGIFY STR(""(123 + 123, +p),,,,,)
 
 #define BF_ULL(x) x ## ULL
+#define BF_ULL_INDIRECT(val) BF_ULL(val)
 #define CONST_MACRO_EXPAND BF_ULL(55 + 55) 
+#define CONST_MACRO_EXPAND_HEX BF_ULL_INDIRECT(0x0000000000000001) 
+
+#define RECURSE(a) RECURSION_TEST(a)
+#define RECURSION_TEST(x) RECURSE(x)
+
+#define RECURSE_RESULT RECURSION_TEST(10)
 
 typedef struct context {
 	int handle;
 	void* userdata;
+
+	char __char;
+	signed char __signedchar;
+	unsigned char __unsignedchar;
 
 	struct {
 		int major, minor;

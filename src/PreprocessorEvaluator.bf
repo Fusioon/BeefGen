@@ -153,6 +153,7 @@ class PreprocessorEvaluator
 	enum EEvalError
 	{
 		NotValid,
+		Recursion,
 		Retry
 	}
 
@@ -459,6 +460,30 @@ class PreprocessorEvaluator
 
 	public Result<void> TokenToString_C(PreprocessorTokenizer.TokenData t, String buffer, Parser.MacroDef macro, Span<StringView> args)
 	{
+		mixin AppendArgAndReturn(StringView name)
+		{
+			if (macro != null)
+			{
+				if (name == "__VA_ARGS__")
+				{
+					Runtime.NotImplemented();
+				}
+
+				for (let a in macro.args)
+				{
+					if (a == name)
+					{
+						let i = @a.Index;
+						if (i >= args.Length)
+							return .Err;
+
+						buffer.Append(args[i]);
+						return .Ok;
+					}	
+				}
+			}
+		}
+
 		switch (t.kind)
 		{
 		case .Questionmark, .Colon, .Stringify, .Concat:
@@ -496,32 +521,15 @@ class PreprocessorEvaluator
 			}
 		case .Identifier:
 			{
-				if (macro != null)
-				{
-					if (t.identifier == "__VA_ARGS__")
-					{
-						Runtime.NotImplemented();
-					}
-
-					for (let a in macro.args)
-					{
-						if (a == t.identifier)
-						{
-							let i = @a.Index;
-							if (i >= args.Length)
-								return .Err;
-
-							buffer.Append(args[i]);
-							return .Ok;
-						}	
-					}
-				}
+				AppendArgAndReturn!(t.identifier);
 
 				buffer.Append(t.identifier);
 			  
 			}
 		case .Arg:
 			{
+				AppendArgAndReturn!(t.arg);
+
 				buffer.Append(t.arg);
 			}
 		}
@@ -617,8 +625,12 @@ class PreprocessorEvaluator
 
 	Result<void, EEvalError> ExpandMacros()
 	{
+		HashSet<String> guard = scope .(4);
+
 		bool needsRetry = false;
-		for (int32 i = 0; i < _tokens.Count; ++i)
+
+		int32 i = 0;
+		while (i < _tokens.Count)
 		{
 			let t = _tokens[i];
 			switch (t.kind)
@@ -640,8 +652,14 @@ class PreprocessorEvaluator
 					{
 						_tokens.RemoveAt(i);
 
+						if (!guard.Add(macro.name))
+							return .Err(.Recursion);
+
 						if ((ExpandMacroInline(ref i, macro)) case .Err)
 							return .Err(.NotValid);
+
+
+						continue; // so we don't increment 'i'
 					}
 					else
 					{
@@ -670,6 +688,8 @@ class PreprocessorEvaluator
 				}
 			default:
 			}
+
+			++i;
 		}
 
 		if (needsRetry)
@@ -692,7 +712,6 @@ class PreprocessorEvaluator
 		}
 	}
 
-
 	public void EvalAll<FilterFN>(FilterFN fn) where FilterFN : delegate bool (Parser.MacroDef macro)
 	{
 		for (let kv in _parser.macros)
@@ -704,7 +723,6 @@ class PreprocessorEvaluator
 		while (_evalList.Count > 0)
 		{
 			let macro = _evalList.PopFront();
-
 			if (_evalDict.TryGetValue(macro, let eval))
 				continue;
 

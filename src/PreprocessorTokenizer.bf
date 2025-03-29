@@ -714,11 +714,11 @@ class PreprocessorTokenizer
 			return .Err;
 		}
 
-		let length = source.position - start - 1;
+		let length = source.position - start;
 		if (source.asArgs != .None)
 			source.NextChar();
 
-		return TokenData(.Arg) { arg = source.input.Substring(start, length) };
+		return TokenData(.Arg) { arg = source.input.Substring(start, length)..Trim() };
 	}
 
 	public Result<TokenData> GetToken<FN>(SourceData source, FN isFNMacro) where FN : delegate bool(StringView name) 

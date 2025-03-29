@@ -493,9 +493,6 @@ class Parser : IRawAllocator
 		}
 		clang_disposeTokens(unit, tokens, tokenCount);
 
-		if (macroDef.name == "WINAPI_FAMILY_WINRT")
-			NOP!();
-
 		let source = scope PreprocessorTokenizer.SourceData(macroDef.value);
 		LOOP:
 		while (source.HasData)
