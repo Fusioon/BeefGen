@@ -221,21 +221,24 @@ class Generator
 			if (e.values.Count < 2)
 				break FIND_PREFIX;
 
-			int shortestLength = int.MaxValue;
+			const int INVALID_VALUE = int32.MaxValue;
+
+			int32 shortestLength = INVALID_VALUE;
 			StringView name = default;
 
 			for (let v in e.values)
 			{
 				if (v.name.Length < shortestLength)
 				{
-					shortestLength = v.name.Length;
+					shortestLength = (.)v.name.Length;
 					name = v.name;
 				}
 			}
 
-			if (shortestLength == int.MaxValue)
+			if (shortestLength == INVALID_VALUE)
 				break FIND_PREFIX;
 
+			CHECK_LOOP:
 			while (name.Length > 0)
 			{
 				CHECK_PREFIX:
@@ -247,10 +250,27 @@ class Generator
 							break CHECK_PREFIX;
 					}
 					prefix.Set(name);
-					break FIND_PREFIX;
+					break CHECK_LOOP;
 				}
 				
 				name.RemoveFromEnd(1);
+			}
+
+			// "Fix" cases when there are same characters at the beginning of the enum values 
+			// eg. FRONTFACE_COUNTER_CLOCKWISE, FRONTFACE_CLOCKWISE
+			// without this we would get OUNTER_CLOCKWISE, LOCKWISE which is bad
+			if (prefix.Length > 3)
+			{
+				for (int32 i = 1; i <= 3; i++)
+				{
+					if (prefix[prefix.Length - i] == '_')
+					{
+						if (i > 1)
+							prefix.RemoveFromEnd(i - 1);
+
+						break;
+					}
+				}
 			}
 		}
 		
