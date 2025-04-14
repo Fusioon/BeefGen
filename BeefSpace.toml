@@ -3,3 +3,9 @@ Projects = {BeefGen = {Path = "."}}
 
 [Workspace]
 StartupProject = "BeefGen"
+
+[Configs.DebugCLI.Win64]
+ConfigSelections = {corlib = {Config = "Debug"}}
+
+[Configs.DebugCLI.Win32]
+ConfigSelections = {BeefGen = {Config = "Debug"}, corlib = {Config = "Debug"}}

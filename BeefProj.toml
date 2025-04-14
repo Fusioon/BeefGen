@@ -5,20 +5,47 @@ Name = "BeefGen"
 StartupObject = "BeefGen.Program"
 
 [Configs.Debug.Win64]
+TargetName = "beefgen_d"
 LibPaths = ["$(WorkspaceDir)/libs/libclang/dist/win_x64/libclang.lib"]
 PostBuildCmds = ["CopyFilesIfNewer(\"$(WorkspaceDir)/libs/libclang/dist/win_x64/libclang.dll\", \"$(TargetDir)\")"]
+
+[Configs.Debug.Win32]
+TargetName = "beefgen_d"
 
 [Configs.Release.Win64]
+TargetName = "beefgen"
 LibPaths = ["$(WorkspaceDir)/libs/libclang/dist/win_x64/libclang.lib"]
 PostBuildCmds = ["CopyFilesIfNewer(\"$(WorkspaceDir)/libs/libclang/dist/win_x64/libclang.dll\", \"$(TargetDir)\")"]
+
+[Configs.Release.Win32]
+TargetName = "beefgen"
 
 [Configs.Paranoid.Win64]
+TargetName = "beefgen"
 LibPaths = ["$(WorkspaceDir)/libs/libclang/dist/win_x64/libclang.lib"]
 PostBuildCmds = ["CopyFilesIfNewer(\"$(WorkspaceDir)/libs/libclang/dist/win_x64/libclang.dll\", \"$(TargetDir)\")"]
 
+[Configs.Paranoid.Win32]
+TargetName = "beefgen"
+
 [Configs.Test.Win64]
+TargetName = "beefgen"
 LibPaths = ["$(WorkspaceDir)/libs/libclang/dist/win_x64/libclang.lib"]
 PostBuildCmds = ["CopyFilesIfNewer(\"$(WorkspaceDir)/libs/libclang/dist/win_x64/libclang.dll\", \"$(TargetDir)\")"]
+
+[Configs.Test.Win32]
+TargetName = "beefgen"
+
+[Configs.DebugCLI.Win64]
+TargetName = "beefgen_dcli"
+BeefLibType = "Static"
+LibPaths = ["$(WorkspaceDir)/libs/libclang/dist/win_x64/libclang.lib"]
+PostBuildCmds = ["CopyFilesIfNewer(\"$(WorkspaceDir)/libs/libclang/dist/win_x64/libclang.dll\", \"$(TargetDir)\")"]
+DebugCommandArguments = "--std=c23 --namespace=TestCLI --f-path=*include/*.h --input=include/test.h --out=\"src/Generated/Test CLI.bf"
+
+[Configs.DebugCLI.Win32]
+TargetName = "beefgen_d"
+BeefLibType = "Static"
 
 [[ProjectFolder.Items]]
 Type = "Source"

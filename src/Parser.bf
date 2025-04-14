@@ -404,7 +404,13 @@ class Parser : IRawAllocator
 			clang_disposeString(tmpStr);
 
 			let fileName = StringView(clang_getCString(tmpStr));
-			let canonicalPath = Path.GetAbsolutePath(null, fileName, .. scope .())..Replace('\\', '/');
+			let canonicalPath = Path.GetAbsolutePath(null, fileName, .. scope .());
+
+			if (((!fileName.EndsWith(Path.DirectorySeparatorChar)) && (!fileName.EndsWith(Path.AltDirectorySeparatorChar))) &&
+				(canonicalPath.EndsWith(Path.DirectorySeparatorChar) || canonicalPath.EndsWith(Path.AltDirectorySeparatorChar)))
+			{
+				canonicalPath.Length -= 1;
+			}
 
 			if (_settings.typeFilter(name, kind, .(inputFile, canonicalPath, line, column, offset)) == false)
 			{

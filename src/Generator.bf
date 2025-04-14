@@ -660,8 +660,14 @@ class Generator
 
 		_writer.WriteLine("using System;");
 		_writer.WriteLine("using System.Interop;");
-		_writer.WriteLine();
-		_writer.WriteLine($"namespace {settings.Namespace};");
+		if (settings.Namespace.Length > 0)
+		{
+			_writer.WriteLine();
+			_writer.WriteLine($"namespace {settings.Namespace};");
+		}
+		else
+		  Log.Warning("No namespace set");
+
 		_writer.WriteLine();
 
 		{
