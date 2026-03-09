@@ -2,7 +2,7 @@
 Utility to generate Beef bindings from C header files
 
 ## Dependencies
-[libclang](https://releases.llvm.org/download.html) - copy libclang.lib & libclang.dll from downloaded archive into `BeefGen\libs\libclang\dist\win_x64`
+- [libclang](https://releases.llvm.org/) _(seems to work with version 22.1.0)_ - copy libclang.lib & libclang.dll from downloaded archive into `BeefGen\libs\libclang\dist\win_x64`
 
 ## Usage
 For CLI interface options use `--help`, if you wish to have finer control over generation
