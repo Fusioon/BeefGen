@@ -401,7 +401,6 @@ class Parser : IRawAllocator
 			clang_getExpansionLocation(clang_getCursorLocation(cursor), &file, &line, &column, &offset);
 
 			let tmpStr = clang_getFileName(file);
-			clang_disposeString(tmpStr);
 
 			let fileName = StringView(clang_getCString(tmpStr));
 			let canonicalPath = Path.GetAbsolutePath(null, fileName, .. scope .());
@@ -411,6 +410,7 @@ class Parser : IRawAllocator
 			{
 				canonicalPath.Length -= 1;
 			}
+			clang_disposeString(tmpStr);
 
 			if (_settings.typeFilter(name, kind, .(inputFile, canonicalPath, line, column, offset)) == false)
 			{
